@@ -1,0 +1,47 @@
+---
+all:
+  children:
+    three_node_cluster:
+      children:
+        three_node_control_plane:
+          hosts:
+            node1:
+              ansible_host: 192.168.1.11
+              ansible_user: ubuntu
+        three_node_workers:
+          hosts:
+            node2:
+              ansible_host: 192.168.1.12
+              ansible_user: ubuntu
+            node3:
+              ansible_host: 192.168.1.13
+              ansible_user: ubuntu
+
+    six_node_cluster:
+      children:
+        control_plane_nodes:
+          hosts:
+            cp1:
+              ansible_host: 192.168.1.21
+              ansible_user: ubuntu
+            cp2:
+              ansible_host: 192.168.1.22
+              ansible_user: ubuntu
+            cp3:
+              ansible_host: 192.168.1.23
+              ansible_user: ubuntu
+        worker_nodes:
+          hosts:
+            worker1:
+              ansible_host: 192.168.1.24
+              ansible_user: ubuntu
+            worker2:
+              ansible_host: 192.168.1.25
+              ansible_user: ubuntu
+            worker3:
+              ansible_host: 192.168.1.26
+              ansible_user: ubuntu
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'

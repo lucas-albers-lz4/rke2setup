@@ -1,0 +1,77 @@
+---
+- name: Create RKE2 config directory
+  ansible.builtin.file:
+    path: /etc/rancher/rke2
+    state: directory
+    mode: '0755'
+
+- name: Configure first control plane node
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    mode: '0644'
+  vars:
+    node_type: server
+    is_first_server: true
+
+- name: Download RKE2 installation script
+  ansible.builtin.get_url:
+    url: https://get.rke2.io
+    dest: /tmp/install.sh
+    mode: '0755'
+
+- name: Install RKE2 server
+  ansible.builtin.command: 
+    cmd: INSTALL_RKE2_VERSION={{ rke2_version }} /tmp/install.sh
+  args:
+    creates: /usr/local/bin/rke2
+
+- name: Start and enable RKE2 server service
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Wait for node to be ready
+  ansible.builtin.command: 
+    cmd: kubectl get nodes
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+  register: node_status
+  until: node_status.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Create kubectl symlink
+  ansible.builtin.file:
+    src: "{{ rke2_binary_path }}/kubectl"
+    dest: "{{ kubectl_path }}"
+    state: link
+
+- name: Create .kube directory
+  ansible.builtin.file:
+    path: "{{ kubeconfig_user_path | dirname }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Copy kubeconfig
+  ansible.builtin.copy:
+    src: "{{ rke2_kubeconfig_path }}"
+    dest: "{{ kubeconfig_user_path }}"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+
+- name: Get cluster token
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/rke2/server/node-token
+  register: node_token
+
+- name: Store token for other nodes
+  ansible.builtin.set_fact:
+    rke2_token: "{{ node_token['content'] | b64decode }}"

@@ -1,0 +1,53 @@
+---
+grafana:
+  adminPassword: "admin"  # Change this in production
+  persistence:
+    enabled: true
+    size: 10Gi
+  service:
+    type: LoadBalancer
+
+prometheus:
+  prometheusSpec:
+    retention: "{{ prometheus_retention }}"
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: "{{ prometheus_storage_size }}"
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    general: true
+    k8s: true
+    kubeScheduler: true
+    kubeProxy: true
+    nodeExporter: true
+    prometheus: true
+
+additionalPrometheusRulesMap:
+  rule-name:
+    groups:
+      - name: custom-rules
+        rules: []  # Add custom rules as needed

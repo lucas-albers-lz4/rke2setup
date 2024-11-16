@@ -1,0 +1,18 @@
+---
+- name: Deploy Three Node RKE2 Cluster
+  hosts: three_node_cluster
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: Set cluster type
+      ansible.builtin.set_fact:
+        cluster_type: "three_node"
+        first_server_ip: "{{ hostvars[groups['three_node_control_plane'][0]]['ansible_host'] }}"
+
+    - name: Set TLS SANs
+      ansible.builtin.set_fact:
+        tls_sans: "{{ groups['three_node_cluster'] | map('extract', hostvars, ['ansible_host']) | list }}"
+
+  roles:
+    - role: rke2-cluster

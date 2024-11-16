@@ -1,0 +1,55 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - python3-pip
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Check system requirements
+  block:
+    - name: Check CPU cores
+      ansible.builtin.assert:
+        that: ansible_processor_vcpus >= 2
+        msg: "At least 2 vCPUs are required"
+
+    - name: Check memory
+      ansible.builtin.assert:
+        that: ansible_memtotal_mb >= 4096
+        msg: "At least 4GB of RAM is required"
+
+    - name: Check available disk space
+      ansible.builtin.command: df -BG / --output=avail
+      register: disk_space
+      changed_when: false
+
+    - name: Verify disk space
+      ansible.builtin.assert:
+        that: disk_space.stdout_lines[1] | regex_replace('G$', '') | int >= 20
+        msg: "At least 20GB of available disk space is required"
+
+- name: Configure kernel parameters
+  ansible.builtin.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+    reload: yes
+  loop:
+    - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+    - { key: 'net.ipv4.ip_forward', value: '1' }
+    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+    - { key: 'vm.swappiness', value: '0' }
+    - { key: 'kernel.panic', value: '10' }
+    - { key: 'kernel.panic_on_oops', value: '1' }
