@@ -209,3 +209,9 @@ MIT
 ## Author
 
 Your Name <your.email@example.com>
+
+## Deployment
+
+To deploy a cluster, use one of the following commands based on your desired cluster size:
+
+### Three Node Cluster
