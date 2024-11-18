@@ -1,0 +1,23 @@
+---
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.ssh"
+    state: directory
+    mode: '0700'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: Generate SSH key for cluster communication
+  community.crypto.openssh_keypair:
+    path: "/home/{{ ansible_user }}/.ssh/rke2_cluster_key"
+    type: ed25519
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+  register: ssh_key_result
+
+- name: Update authorized keys
+  ansible.posix.authorized_key:
+    user: "{{ ansible_user }}"
+    state: present
+    key: "{{ ssh_key_result.public_key }}"

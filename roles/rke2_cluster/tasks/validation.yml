@@ -1,0 +1,54 @@
+---
+- name: Validate cluster deployment
+  block:
+    - name: Check node status
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get nodes"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: node_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display node status
+      ansible.builtin.debug:
+        var: node_status.stdout_lines
+
+    - name: Check pod status across all namespaces
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get pods -A"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: pod_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display pod status
+      ansible.builtin.debug:
+        var: pod_status.stdout_lines
+
+    - name: Verify cluster version
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} version"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: version_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display version information
+      ansible.builtin.debug:
+        var: version_info.stdout_lines
+
+    - name: Validate critical system components
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get componentstatuses"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: component_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display component status
+      ansible.builtin.debug:
+        var: component_status.stdout_lines

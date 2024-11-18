@@ -1,0 +1,60 @@
+---
+- name: Create RKE2 config directory on workers
+  ansible.builtin.file:
+    path: "{{ paths.rke2.config }}"
+    state: directory
+    mode: '0755'
+
+- name: Configure worker nodes
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  vars:
+    node_type: "{{ install_types.agent }}"
+    is_first_server: false
+
+- name: Install RKE2 agent
+  ansible.builtin.get_url:
+    url: https://get.rke2.io
+    dest: /tmp/rke2-install.sh
+    mode: '0755'
+  register: rke2_installer
+
+- name: Execute RKE2 agent installation
+  ansible.builtin.shell: |
+    INSTALL_RKE2_TYPE=agent sh /tmp/rke2-install.sh
+  args:
+    creates: "{{ paths.rke2.binary }}"
+  environment:
+    INSTALL_RKE2_METHOD: tar
+
+- name: Verify RKE2 agent installation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: rke2_files
+  with_items:
+    - "{{ paths.rke2.binary }}"
+    - "{{ paths.rke2.data }}/bin/rke2"
+    - "{{ paths.rke2.config }}"
+
+- name: Debug RKE2 file status
+  ansible.builtin.debug:
+    msg: "{{ item.item }} exists: {{ item.stat.exists }}"
+  loop: "{{ rke2_files.results }}"
+
+- name: Start and enable RKE2 agent service
+  ansible.builtin.systemd:
+    name: "{{ services.agent }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Verify RKE2 agent service status
+  ansible.builtin.systemd:
+    name: "{{ services.agent }}"
+    state: started
+  register: service_status
+  until: service_status.status.ActiveState == "active"
+  retries: "{{ wait_config.retries }}"
+  delay: "{{ wait_config.delay }}"

@@ -1,0 +1,24 @@
+---
+- name: Gather system information
+  ansible.builtin.setup:
+    gather_subset:
+      - hardware
+      - network
+
+- name: Final preflight checks
+  ansible.builtin.debug:
+    msg:
+      - "Hostname: {{ inventory_hostname }}"
+      - "Primary IP: {{ ansible_default_ipv4.address }}"
+      - "CPU Cores: {{ ansible_processor_vcpus }}"
+      - "Total Memory: {{ ansible_memtotal_mb }} MB"
+
+- name: Verify minimum requirements
+  ansible.builtin.assert:
+    that:
+      - ansible_processor_vcpus >= 2
+      - ansible_memtotal_mb >= 3800
+    fail_msg: |
+      System does not meet minimum requirements:
+      Required: 2 CPU cores, 4GB RAM
+      Found: {{ ansible_processor_vcpus }} cores, {{ ansible_memtotal_mb }}MB RAM

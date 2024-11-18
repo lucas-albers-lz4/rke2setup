@@ -1,0 +1,26 @@
+---
+- name: Stop RKE2 services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  with_items:
+    - rke2-server
+    - rke2-agent
+  failed_when: false
+
+- name: Run RKE2 uninstall script
+  ansible.builtin.command:
+    cmd: /usr/local/bin/rke2-uninstall.sh
+    removes: /usr/local/bin/rke2-uninstall.sh
+  failed_when: false
+
+- name: Clean up remaining files and directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /var/lib/rancher/rke2
+    - /etc/rancher/rke2
+    - /usr/local/bin/rke2
+  failed_when: false

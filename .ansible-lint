@@ -1,0 +1,22 @@
+---
+exclude_paths:
+  - .cache/
+  - .github/
+  - scripts/
+
+skip_list:
+  - no-handler
+  - no-changed-when
+  - command-instead-of-module
+  - no-free-form
+  - yaml[line-length]
+  - yaml[truthy]
+  - var-naming[no-role-prefix]
+
+enable_list:
+  - fqcn-builtins
+  - no-log-password
+
+offline: true
+profile: production
+strict: true

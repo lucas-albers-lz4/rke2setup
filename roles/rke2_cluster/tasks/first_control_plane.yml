@@ -1,0 +1,78 @@
+---
+# Generate token for the cluster
+- name: Generate cluster token
+  ansible.builtin.set_fact:
+    rke2_token: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
+  run_once: true
+  delegate_to: localhost
+
+# Share token with other hosts
+- name: Share token with other hosts
+  ansible.builtin.set_fact:
+    rke2_token: "{{ hostvars[groups['three_node_control_plane'].0]['rke2_token'] }}"
+  when: inventory_hostname != groups['three_node_control_plane'].0
+
+- name: Create RKE2 config directory
+  ansible.builtin.file:
+    path: "{{ paths.rke2.config }}"
+    state: directory
+    mode: '0755'
+
+- name: Configure first control plane node
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  vars:
+    node_type: "{{ install_types.server }}"
+    is_first_server: true
+
+- name: Download RKE2 installation script
+  ansible.builtin.get_url:
+    url: https://get.rke2.io
+    dest: /tmp/rke2-install.sh
+    mode: '0755'
+  register: rke2_installer
+
+- name: Install RKE2 server
+  block:
+    - name: Execute RKE2 server installation
+      ansible.builtin.shell: |
+        set -o pipefail
+        INSTALL_RKE2_TYPE=server sh /tmp/rke2-install.sh
+      args:
+        creates: "{{ commands.rke2 }}"
+        executable: /bin/bash
+      environment:
+        INSTALL_RKE2_METHOD: tar
+
+- name: Enable and start RKE2 server
+  ansible.builtin.systemd:
+    name: rke2-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Create kubectl symlink
+  ansible.builtin.file:
+    src: "{{ paths.rke2.data }}/bin/kubectl"
+    dest: "/usr/local/bin/kubectl"
+    state: link
+    force: true
+
+- name: Create .kube directory
+  ansible.builtin.file:
+    path: "{{ paths.user.kube_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Copy kubeconfig
+  ansible.builtin.copy:
+    src: "{{ paths.rke2.kubeconfig }}"
+    dest: "{{ paths.user.kubeconfig }}"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'

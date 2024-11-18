@@ -1,0 +1,28 @@
+---
+- name: Setup first control plane node
+  ansible.builtin.include_tasks: first_control_plane.yml
+  when: inventory_hostname == groups['three_node_control_plane'].0
+
+- name: Setup additional control plane nodes
+  ansible.builtin.include_tasks: additional_control_planes.yml
+  when:
+    - inventory_hostname != groups['three_node_control_plane'].0
+    - inventory_hostname in groups['three_node_cluster']
+
+- name: Setup worker nodes
+  ansible.builtin.include_tasks: workers.yml
+  when:
+    - inventory_hostname in groups['three_node_worker']
+
+- name: Verify cluster status
+  ansible.builtin.include_tasks: verify_cluster.yml
+  when: inventory_hostname == groups['three_node_control_plane'].0
+
+- name: Configure user access
+  ansible.builtin.include_tasks: configure_user_access.yml
+
+- name: Install cluster add-ons
+  ansible.builtin.include_tasks: addons.yml
+  when: inventory_hostname == groups['three_node_control_plane'].0
+
+

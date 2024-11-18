@@ -1,0 +1,53 @@
+---
+- name: Create RKE2 config directory for additional control planes
+  ansible.builtin.file:
+    path: "{{ paths.rke2.config }}"
+    state: directory
+    mode: '0755'
+
+- name: Configure additional control plane nodes
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  vars:
+    node_type: "{{ install_types.server }}"
+    is_first_server: false
+
+- name: Download RKE2 installation script
+  ansible.builtin.get_url:
+    url: https://get.rke2.io
+    dest: /tmp/rke2-install.sh
+    mode: '0755'
+  register: rke2_installer
+
+- name: Install RKE2 server
+  ansible.builtin.shell: |
+    set -o pipefail
+    INSTALL_RKE2_TYPE=server sh /tmp/rke2-install.sh
+  args:
+    creates: "{{ commands.rke2 }}"
+    executable: /bin/bash
+  environment:
+    INSTALL_RKE2_METHOD: tar
+
+- name: Enable and start RKE2 server
+  ansible.builtin.systemd:
+    name: rke2-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Verify RKE2 server installation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: rke2_files
+  with_items:
+    - "{{ commands.rke2 }}"
+    - "{{ paths.rke2.data }}/bin/rke2"
+    - "{{ paths.rke2.config }}"
+
+- name: Debug RKE2 file status
+  ansible.builtin.debug:
+    msg: "{{ item.item }} exists: {{ item.stat.exists }}"
+  loop: "{{ rke2_files.results }}"

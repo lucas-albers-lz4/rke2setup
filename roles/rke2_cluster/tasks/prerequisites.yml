@@ -1,0 +1,104 @@
+---
+- name: Check sudo configuration
+  block:
+    - name: Test passwordless sudo
+      ansible.builtin.command: sudo -n true
+      register: sudo_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify passwordless sudo is configured
+      ansible.builtin.assert:
+        that: sudo_check.rc == 0
+        fail_msg: |
+          Passwordless sudo is not configured correctly for user {{ ansible_user }}.
+          Please ensure the following line exists in /etc/sudoers.d/{{ ansible_user }}:
+          {{ ansible_user }} ALL=(ALL) NOPASSWD:ALL
+        success_msg: "Passwordless sudo is configured correctly"
+
+    - name: Check sudo secure_path
+      ansible.builtin.command: sudo -n grep secure_path /etc/sudoers
+      register: sudo_path
+      changed_when: false
+      failed_when: false
+
+    - name: Verify required paths in sudo secure_path
+      ansible.builtin.assert:
+        that:
+          - '"/usr/local/bin" in sudo_path.stdout'
+          - '"/usr/local/sbin" in sudo_path.stdout'
+        fail_msg: |
+          Sudo secure_path is missing required directories.
+          Please ensure /usr/local/bin and /usr/local/sbin are in secure_path in /etc/sudoers
+        success_msg: "Sudo secure_path contains required directories"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - python3-pip
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Check system requirements
+  block:
+    - name: Check CPU cores
+      ansible.builtin.assert:
+        that: ansible_processor_vcpus >= 2
+        msg: "At least 2 vCPUs are required"
+
+- name: Check memory
+  ansible.builtin.assert:
+    that: (ansible_memtotal_mb | int) >= 3800
+    fail_msg: "At least 4GB of RAM is required (found {{ ansible_memtotal_mb }}MB)"
+
+- name: Check available disk space
+  ansible.builtin.command: df -BG / --output=avail
+  register: disk_space
+  changed_when: false
+
+- name: Verify disk space
+  ansible.builtin.assert:
+    that: disk_space.stdout_lines[1] | regex_replace('G$', '') | int >= 10
+    msg: "At least 20GB of available disk space is required"
+
+- name: Load required kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - br_netfilter
+    - overlay
+  become: true
+
+- name: Persist kernel modules
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      br_netfilter
+      overlay
+    mode: '0644'
+  become: true
+
+- name: Configure kernel parameters
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    - { key: 'vm.swappiness', value: '0' }
+    - { key: 'vm.overcommit_memory', value: '1' }
+    - { key: 'net.ipv4.ip_forward', value: '1' }
+    - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }

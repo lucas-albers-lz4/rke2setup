@@ -1,0 +1,69 @@
+---
+- name: Check if node is already ready
+  ansible.builtin.command:
+    cmd: "{{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
+  register: node_status
+  changed_when: false
+  failed_when: false
+  environment:
+    KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+
+- name: Wait for node to be ready
+  block:
+    - name: Attempt to verify node readiness
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      args:
+        executable: /bin/bash
+      register: node_readiness
+      until: node_readiness.stdout == 'True'
+      retries: "{{ wait_config.retries }}"
+      delay: "{{ wait_config.delay }}"
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+
+- name: Debug node readiness status
+  ansible.builtin.debug:
+    msg:
+      - "Node: {{ inventory_hostname }}"
+      - "Readiness Status: {{ node_readiness.stdout | default('Unknown') }}"
+
+- name: Verify RKE2 server service
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: started
+  register: rke2_service_status
+  failed_when: false
+
+- name: Final wait for server readiness
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: 6443
+    timeout: 300
+    state: started
+  failed_when: false
+
+- name: Wait for RKE2 server to be ready
+  ansible.builtin.wait_for:
+    host: "{{ first_server_ip }}"
+    port: 6443
+    state: started
+    timeout: 300
+  register: server_wait
+  retries: 30
+  delay: 10
+  until: server_wait is success
+  when: not (inventory_hostname == groups['three_node_control_plane'][0])
+
+- name: Verify server connectivity
+  ansible.builtin.uri:
+    url: "https://{{ first_server_ip }}:6443/healthz"
+    validate_certs: false
+    return_content: true
+  register: healthz_check
+  until: healthz_check.content == "ok"
+  retries: 30
+  delay: 10
+  when: not (inventory_hostname == groups['three_node_control_plane'][0])
