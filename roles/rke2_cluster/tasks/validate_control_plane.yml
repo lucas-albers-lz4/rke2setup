@@ -1,0 +1,31 @@
+---
+- name: Validate control plane health
+  block:
+    - name: Check etcd health
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get --raw /healthz/etcd"
+      register: etcd_health
+      until: etcd_health.stdout == "ok"
+      retries: 30  # 5 minutes with 10s delay
+      delay: 10
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+
+    - name: Verify etcd pods
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get pods -n kube-system -l component=etcd -o jsonpath='{.items[*].status.phase}'"
+      register: etcd_pods
+      until: etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['three_node_control_plane'] | length
+      retries: 30
+      delay: 10
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+
+    - name: Set control plane validation flag
+      ansible.builtin.set_fact:
+        control_plane_validated: true
+      when: 
+        - etcd_health.stdout == "ok"
+        - etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['three_node_control_plane'] | length

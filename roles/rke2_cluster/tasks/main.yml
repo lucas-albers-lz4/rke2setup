@@ -24,3 +24,11 @@
 - name: Install cluster add-ons
   ansible.builtin.include_tasks: addons.yml
   when: inventory_hostname == groups['three_node_control_plane'].0
+
+- name: Validate control plane
+  ansible.builtin.include_tasks: validate_control_plane.yml
+  when: inventory_hostname == groups['three_node_control_plane'][0]
+
+- name: Configure workloads
+  ansible.builtin.include_tasks: configure_workloads.yml
+  when: inventory_hostname in groups['three_node_control_plane']
