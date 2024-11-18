@@ -14,10 +14,10 @@ WARNING_HEADER = """############################################################
 
 """
 
-def parse_hosts_file(hosts_file: str) -> tuple[List[str], List[str]]:
-    """Parse hosts.txt file to extract control plane and worker IPs."""
-    control_plane_ips = []
-    worker_ips = []
+def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
+    """Parse hosts.txt file to extract control plane and worker node info as (hostname, ip) tuples."""
+    control_plane_nodes = []
+    worker_nodes = []
     
     with open(hosts_file, 'r') as f:
         lines = f.readlines()
@@ -33,18 +33,19 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[str], List[str]]:
                 continue
                 
             if in_three_node and line:
-                # First node is control plane, rest are workers
+                # Parse hostname and IP
                 parts = line.split()
                 if len(parts) >= 2:
+                    hostname = parts[0]
                     ip = parts[1]
-                    if not control_plane_ips:
-                        control_plane_ips.append(ip)
+                    if not control_plane_nodes:
+                        control_plane_nodes.append((hostname, ip))
                     else:
-                        worker_ips.append(ip)
+                        worker_nodes.append((hostname, ip))
     
-    return control_plane_ips, worker_ips
+    return control_plane_nodes, worker_nodes
 
-def generate_inventory(control_plane_ips: List[str], worker_ips: List[str]) -> Dict:
+def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> Dict:
     """Generate inventory structure."""
     inventory = {
         'all': {
@@ -69,14 +70,14 @@ def generate_inventory(control_plane_ips: List[str], worker_ips: List[str]) -> D
     }
 
     # Add control plane node
-    for idx, ip in enumerate(control_plane_ips, 1):
-        inventory['all']['children']['three_node_cluster']['children']['three_node_control_plane']['hosts'][f'K{idx}'] = {
+    for hostname, ip in control_plane_nodes:
+        inventory['all']['children']['three_node_cluster']['children']['three_node_control_plane']['hosts'][hostname] = {
             'ansible_host': ip
         }
 
     # Add worker nodes
-    for idx, ip in enumerate(worker_ips, len(control_plane_ips) + 1):
-        inventory['all']['children']['three_node_cluster']['children']['three_node_worker']['hosts'][f'K{idx}'] = {
+    for hostname, ip in worker_nodes:
+        inventory['all']['children']['three_node_cluster']['children']['three_node_worker']['hosts'][hostname] = {
             'ansible_host': ip
         }
 
@@ -89,8 +90,8 @@ def main():
     
     args = parser.parse_args()
     
-    control_plane_ips, worker_ips = parse_hosts_file(args.hosts_file)
-    inventory = generate_inventory(control_plane_ips, worker_ips)
+    control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
+    inventory = generate_inventory(control_plane_nodes, worker_nodes)
     
     with open(args.output, 'w') as f:
         f.write(WARNING_HEADER)
