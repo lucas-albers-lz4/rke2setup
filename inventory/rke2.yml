@@ -16,9 +16,9 @@ all:
         cluster_type: three_node
         first_server_ip: 192.168.1.48
         tls_sans:
-        - 192.168.1.48
-        - 192.168.1.49
-        - 192.168.1.50
+          - 192.168.1.48
+          - 192.168.1.49
+          - 192.168.1.50
   vars:
     ansible_python_interpreter: /usr/bin/python3
     ansible_ssh_common_args: -o StrictHostKeyChecking=no
