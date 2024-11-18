@@ -1,13 +1,11 @@
 ---
 - name: Deploy Three Node RKE2 Cluster
   hosts: three_node_cluster
-  become: true
   gather_facts: true
-  
-  pre_tasks:
-    - name: Set cluster type
-      set_fact:
-        cluster_type: "{{ hostvars[inventory_hostname]['cluster_type'] | default('three_node') }}"
+  become: true
 
   roles:
-    - role: rke2-cluster
+    - role: rke2_cluster
+      vars:
+        cluster_type: three_node
+        first_server_ip: "{{ hostvars[groups['three_node_control_plane'][0]]['ansible_host'] }}"

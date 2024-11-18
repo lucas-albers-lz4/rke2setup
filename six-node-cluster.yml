@@ -15,4 +15,4 @@
         tls_sans: "{{ groups['six_node_cluster'] | map('extract', hostvars, ['ansible_host']) | list }}"
 
   roles:
-    - role: rke2-cluster
+    - role: rke2_cluster
