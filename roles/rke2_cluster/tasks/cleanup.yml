@@ -21,6 +21,13 @@
     state: absent
   with_items:
     - /var/lib/rancher/rke2
+    - /var/lib/rancher/rke2/server/db/etcd
+    - /var/lib/rancher/rke2/server/cred
+    - /var/lib/rancher/rke2/server/tls
     - /etc/rancher/rke2
     - /usr/local/bin/rke2
+    - /run/k3s
+    - /run/flannel
+    - /var/lib/kubelet
+    - /var/lib/rancher/rke2
   failed_when: false
