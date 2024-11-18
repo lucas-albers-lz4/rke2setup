@@ -1,4 +1,13 @@
 ---
+- name: Prevent concurrent bootstrap/cleanup
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Check for concurrent execution
+      fail:
+        msg: "ERROR: Cannot run cleanup.yml and bootstrap-cluster.yml together. Please run them separately."
+      when: "'bootstrap-cluster.yml' in ansible_run_tags or 'bootstrap-cluster.yml' in ansible_play_hosts"
+
 - name: RKE2 Cluster Cleanup Playbook
   hosts: three_node_cluster
   become: true
