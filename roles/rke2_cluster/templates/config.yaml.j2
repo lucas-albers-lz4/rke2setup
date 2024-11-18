@@ -17,9 +17,14 @@ tls-san:
   - {{ hostvars[host]['ansible_host'] }}
 {% endfor %}
 
-# Add some basic labels
+# Add node labels and remove control plane taint
 node-label:
   - "node.kubernetes.io/instance-type=control-plane"
   - "kubernetes.io/hostname={{ inventory_hostname | lower }}"
+  - "workload.type=mixed"
+
+# Remove control plane taint to allow workload scheduling
+node-taint:
+  - "CriticalAddonsOnly=true:NoSchedule-"
 
 # Let RKE2 use default networking settings
