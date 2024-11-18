@@ -24,5 +24,3 @@
 - name: Install cluster add-ons
   ansible.builtin.include_tasks: addons.yml
   when: inventory_hostname == groups['three_node_control_plane'].0
-
-
