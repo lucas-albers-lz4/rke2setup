@@ -1,6 +1,6 @@
 ---
 - name: RKE2 Cluster Cleanup Playbook
-  hosts: all
+  hosts: three_node_cluster
   become: true
   gather_facts: false
   strategy: linear
@@ -10,6 +10,12 @@
       ansible.builtin.pause:
         prompt: "This will completely remove RKE2 from all nodes. Press ENTER to continue or CTRL+C to abort"
       delegate_to: localhost
+      run_once: true
+
+    - name: Include RKE2 cleanup tasks
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: cleanup.yml
 
     - name: Stop and disable all RKE2-related services
       ansible.builtin.systemd:
