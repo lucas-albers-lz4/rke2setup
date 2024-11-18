@@ -1,0 +1,81 @@
+---
+# RKE2 Cluster Default Variables
+
+# Cluster Configuration
+cluster_type: three_node
+first_server_ip: ""
+
+# Installation Paths
+paths:
+  rke2:
+    config: /etc/rancher/rke2
+    data: /var/lib/rancher/rke2
+    bin: /var/lib/rancher/rke2/bin
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+    binary: /usr/local/bin/rke2
+  user:
+    kube_dir: "{{ ansible_user_dir }}/.kube"
+    kubeconfig: "{{ ansible_user_dir }}/.kube/config"
+
+# Wait Configuration
+wait_config:
+  retries: 30
+  delay: 10
+
+# Installation Types
+install_types:
+  server: server
+  agent: agent
+
+# Services
+services:
+  server: rke2-server
+  agent: rke2-agent
+
+# Commands
+commands:
+  rke2: /usr/local/bin/rke2
+  kubectl: /usr/local/bin/kubectl
+
+# Network Configuration
+network:
+  plugin: cilium
+  cni_version: v1.14.0
+
+# Additional Add-ons
+install_cilium: true
+install_metrics_server: true
+install_dashboard: false
+
+# Security Configuration
+pod_security_admission:
+  enabled: true
+  default_profile: baseline
+
+# Resource Constraints
+system_requirements:
+  min_cpu_cores: 2
+  min_memory_mb: 4096
+  max_memory_mb: 16384
+
+# Logging Configuration
+logging:
+  level: info
+  output_file: /var/log/rke2/rke2.log
+
+# Experimental Features
+experimental:
+  enable_custom_registries: false
+  custom_registries_path: /etc/rancher/rke2/registries.yaml
+
+# Default configurations
+default_config:
+  token: rke2-cluster-token
+  cni: canal
+  disable:
+    - rke2-ingress-nginx
+  node-taint: []
+
+# Feature flags
+enable_monitoring: true
+enable_ingress: true

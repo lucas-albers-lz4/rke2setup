@@ -1,0 +1,32 @@
+---
+- name: Restart RKE2 server
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups['three_node_control_plane']
+
+- name: Restart RKE2 agent
+  ansible.builtin.systemd:
+    name: rke2-agent
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups['three_node_worker']
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Reload sysctl
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: false
+
+- name: Wait for node ready
+  ansible.builtin.command:
+    cmd: "{{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
+  register: node_status
+  retries: 10
+  delay: 10
+  until: node_status.stdout == 'True'
+  changed_when: false
