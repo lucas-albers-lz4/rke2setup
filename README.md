@@ -59,19 +59,54 @@ Worker Nodes (each):
   - Containers: 10GB
   - System: 4GB
 
-## Usage
+## Quick Start Guide
 
-1. Update the inventory file (`inventory/rke2.yml`) with your node IPs
+1. Create a simple inventory file (`inventory/hosts.txt`):
+```plaintext
+# Three Node Cluster
+[three_node]
+node1 192.168.1.11
+node2 192.168.1.12
+node3 192.168.1.13
 
-2. Deploy three-node cluster:
-```bash
-ansible-playbook -i inventory/rke2.yml three-node-cluster.yml
+# Six Node Cluster
+[six_node]
+cp1 192.168.1.21
+cp2 192.168.1.22
+cp3 192.168.1.23
+worker1 192.168.1.24
+worker2 192.168.1.25
+worker3 192.168.1.26
 ```
 
-3. Deploy six-node cluster:
+2. Generate the Ansible inventory:
 ```bash
+./scripts/update_inventory.sh
+```
+
+3. Deploy your chosen cluster type:
+```bash
+# For three-node cluster
+ansible-playbook -i inventory/rke2.yml three-node-cluster.yml
+
+# For six-node cluster
 ansible-playbook -i inventory/rke2.yml six-node-cluster.yml
 ```
+
+## Prerequisites Setup
+
+The following system configurations are automatically handled by the playbook:
+
+1. System Updates
+2. Kernel Module Configuration
+   - overlay
+   - br_netfilter
+3. Kernel Parameters
+   - bridge-nf-call-iptables
+   - ip_forward
+   - bridge-nf-call-ip6tables
+4. Firewall Configuration
+5. SSH Key Setup
 
 ## Available Tags
 
@@ -93,6 +128,46 @@ The following add-ons are included:
   - Prometheus (~ 1GB RAM, 50GB Storage)
   - Grafana (~ 500MB RAM)
 
+## Node Configuration
+
+Each node is configured with:
+1. RKE2 Configuration Directory
+2. Node-specific Configuration
+3. Cluster Token Management
+4. TLS Certificate Configuration
+
+### Control Plane Configuration
+
+The first control plane node is initialized with:
+- Cluster initialization parameters
+- TLS SANs for all nodes
+- Token configuration
+- kubectl access setup
+
+### Worker Node Configuration
+
+Workers are configured with:
+- Agent mode setup
+- Connection to control plane
+- Node readiness verification
+
+## Post-Installation
+
+After successful deployment:
+
+1. Access the cluster:
+```bash
+export KUBECONFIG=~/.kube/config
+kubectl get nodes
+```
+
+2. Verify add-ons:
+```bash
+kubectl get pods -n monitoring    # Check Prometheus stack
+kubectl get pods -n ingress-nginx # Check NGINX Ingress
+kubectl get pods -n metallb-system # Check MetalLB
+```
+
 ## Validation
 
 After deployment, the role will:
@@ -100,13 +175,20 @@ After deployment, the role will:
 2. Check pod status across all namespaces
 3. Display cluster version information
 
-## License
+## Troubleshooting
 
-MIT
+Common verification steps:
+1. Check node status: `kubectl get nodes`
+2. View pod status: `kubectl get pods -A`
+3. Check service logs: `journalctl -u rke2-server.service`
+4. Verify network connectivity: `kubectl get pods -n kube-system`
 
-## Author
+## Notes
 
-Your Name <your.email@example.com>
+- Wait for each node to be fully initialized before proceeding
+- The cluster uses Canal (Calico + Flannel) for networking by default
+- Control plane nodes in three-node setup also run workloads
+- Token configuration is automatically handled by the playbook
 
 ## Contributing
 
@@ -119,3 +201,11 @@ Your Name <your.email@example.com>
 ## Support
 
 Please [open an issue](https://github.com/yourusername/rke2-ansible-role/issues/new) for support.
+
+## License
+
+MIT
+
+## Author
+
+Your Name <your.email@example.com>
