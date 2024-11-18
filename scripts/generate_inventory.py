@@ -2,6 +2,7 @@
 
 import yaml
 import argparse
+from pathlib import Path
 from typing import Dict, List
 
 WARNING_HEADER = """#####################################################################
@@ -13,7 +14,38 @@ WARNING_HEADER = """############################################################
 
 """
 
+def parse_hosts_file(hosts_file: str) -> tuple[List[str], List[str]]:
+    """Parse hosts.txt file to extract control plane and worker IPs."""
+    control_plane_ips = []
+    worker_ips = []
+    
+    with open(hosts_file, 'r') as f:
+        lines = f.readlines()
+        in_three_node = False
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+                
+            if '[three_node]' in line:
+                in_three_node = True
+                continue
+                
+            if in_three_node and line:
+                # First node is control plane, rest are workers
+                parts = line.split()
+                if len(parts) >= 2:
+                    ip = parts[1]
+                    if not control_plane_ips:
+                        control_plane_ips.append(ip)
+                    else:
+                        worker_ips.append(ip)
+    
+    return control_plane_ips, worker_ips
+
 def generate_inventory(control_plane_ips: List[str], worker_ips: List[str]) -> Dict:
+    """Generate inventory structure."""
     inventory = {
         'all': {
             'children': {
@@ -22,14 +54,9 @@ def generate_inventory(control_plane_ips: List[str], worker_ips: List[str]) -> D
                         'three_node_control_plane': {
                             'hosts': {}
                         },
-                        'three_node_workers': {
+                        'three_node_worker': {
                             'hosts': {}
                         }
-                    },
-                    'vars': {
-                        'cluster_type': 'three_node',
-                        'first_server_ip': control_plane_ips[0],
-                        'tls_sans': control_plane_ips + worker_ips
                     }
                 }
             },
@@ -41,7 +68,7 @@ def generate_inventory(control_plane_ips: List[str], worker_ips: List[str]) -> D
         }
     }
 
-    # Add control plane nodes
+    # Add control plane node
     for idx, ip in enumerate(control_plane_ips, 1):
         inventory['all']['children']['three_node_cluster']['children']['three_node_control_plane']['hosts'][f'K{idx}'] = {
             'ansible_host': ip
@@ -49,33 +76,25 @@ def generate_inventory(control_plane_ips: List[str], worker_ips: List[str]) -> D
 
     # Add worker nodes
     for idx, ip in enumerate(worker_ips, len(control_plane_ips) + 1):
-        inventory['all']['children']['three_node_cluster']['children']['three_node_workers']['hosts'][f'K{idx}'] = {
+        inventory['all']['children']['three_node_cluster']['children']['three_node_worker']['hosts'][f'K{idx}'] = {
             'ansible_host': ip
         }
 
     return inventory
 
-def write_inventory(inventory: Dict, output_file: str):
-    """Write inventory to file with warning header."""
-    with open(output_file, 'w') as f:
-        f.write(WARNING_HEADER.rstrip() + '\n\n')  # Ensure exactly one blank line after header
-        yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2, width=1000)
-        f.write('\n')  # Ensure single newline at end of file
-
 def main():
     parser = argparse.ArgumentParser(description='Generate RKE2 cluster inventory')
-    parser.add_argument('--control-plane-ips', nargs='+', required=True,
-                      help='List of control plane node IPs')
-    parser.add_argument('--worker-ips', nargs='+', required=True,
-                      help='List of worker node IPs')
-    parser.add_argument('--output', default='inventory/rke2.yml',
-                      help='Output inventory file path')
-
+    parser.add_argument('hosts_file', help='Path to hosts.txt file')
+    parser.add_argument('--output', default='inventory/rke2.yml', help='Output inventory file path')
+    
     args = parser.parse_args()
     
-    inventory = generate_inventory(args.control_plane_ips, args.worker_ips)
-    write_inventory(inventory, args.output)
-    print(f"Inventory generated at {args.output}")
+    control_plane_ips, worker_ips = parse_hosts_file(args.hosts_file)
+    inventory = generate_inventory(control_plane_ips, worker_ips)
+    
+    with open(args.output, 'w') as f:
+        f.write(WARNING_HEADER)
+        yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2)
 
 if __name__ == '__main__':
     main()
