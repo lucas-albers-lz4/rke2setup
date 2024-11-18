@@ -1,0 +1,52 @@
+---
+- name: Validate cluster deployment
+  block:
+    - name: Check node status
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get nodes"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: node_status
+      changed_when: false
+
+    - name: Display node status
+      ansible.builtin.debug:
+        var: node_status.stdout_lines
+
+    - name: Check pod status across all namespaces
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get pods -A"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: pod_status
+      changed_when: false
+
+    - name: Display pod status
+      ansible.builtin.debug:
+        var: pod_status.stdout_lines
+
+    - name: Verify cluster version
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} version"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: version_info
+      changed_when: false
+
+    - name: Display version information
+      ansible.builtin.debug:
+        var: version_info.stdout_lines
+
+    - name: Check control plane components
+      ansible.builtin.command:
+        cmd: "{{ commands.kubectl }} get pods -n kube-system -l tier=control-plane -o wide"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: control_plane_status
+      delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+      run_once: true
+      changed_when: false
+
+    - name: Display control plane status
+      ansible.builtin.debug:
+        var: control_plane_status.stdout_lines

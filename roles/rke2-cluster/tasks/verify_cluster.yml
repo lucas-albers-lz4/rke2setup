@@ -1,0 +1,27 @@
+---
+- name: Wait for all nodes to be ready
+  ansible.builtin.shell:
+    cmd: /var/lib/rancher/rke2/bin/kubectl get nodes
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+  register: node_status
+  until: >
+    node_status.rc == 0 and
+    node_status.stdout_lines | length > 3 and
+    node_status.stdout is search('Ready')
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Display cluster node status
+  ansible.builtin.debug:
+    msg: |
+      {% set header = node_status.stdout_lines[0] %}
+      {% set nodes = node_status.stdout_lines[1:] %}
+      
+      Cluster Node Status
+      ==================
+      {{ header }}
+      {% for node in nodes %}
+      {{ node }}
+      {% endfor %}

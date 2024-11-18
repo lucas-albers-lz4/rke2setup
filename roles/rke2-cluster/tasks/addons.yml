@@ -1,0 +1,133 @@
+---
+- name: Debug cluster configuration
+  debug:
+    msg: 
+      - "Cluster Type: {{ cluster_type }}"
+      - "Groups: {{ groups }}"
+      - "Control Plane Nodes: {{ groups[cluster_type + '_control_plane'] }}"
+  when: inventory_hostname == groups[cluster_type + '_control_plane'][0]
+
+- name: Wait for cluster to be ready before installing add-ons
+  command: "{{ paths.rke2.bin }}/kubectl wait --for=condition=Ready nodes --all --timeout=300s"
+  environment:
+    KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+  register: cluster_ready
+  until: cluster_ready.rc == 0
+  retries: 10
+  delay: 30
+  when: 
+    - inventory_hostname == groups[cluster_type + '_control_plane'][0]
+    - groups[cluster_type + '_control_plane'] is defined
+
+- name: Verify cluster configuration
+  assert:
+    that:
+      - cluster_type is defined
+      - groups[cluster_type + '_control_plane'] is defined
+      - groups[cluster_type + '_control_plane'] | length > 0
+    fail_msg: "Invalid cluster configuration. Please check your inventory file."
+  when: inventory_hostname == groups[cluster_type + '_control_plane'][0]
+
+- name: Add required Helm repositories
+  kubernetes.core.helm_repository:
+    name: "{{ item.name }}"
+    repo_url: "{{ item.url }}"
+    kubeconfig: "{{ paths.rke2.kubeconfig }}"
+  environment:
+    PATH: "{{ paths.rke2.bin }}:/usr/local/bin:{{ ansible_env.PATH }}"
+  loop: "{{ helm_repos }}"
+  when: 
+    - inventory_hostname == groups[cluster_type + '_control_plane'][0]
+    - helm_repos is defined
+
+- name: Install MetalLB
+  when: install_metallb | bool
+  block:
+    - name: Create MetalLB namespace
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/rke2/rke2.yaml
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: metallb-system
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+      run_once: true
+
+    - name: Deploy MetalLB configuration
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/rke2/rke2.yaml
+        state: present
+        src: templates/metallb-config.yml.j2
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+      run_once: true
+
+- name: Verify MetalLB deployment
+  when: install_metallb | bool
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: metallb-system
+    label_selectors:
+      - app=metallb
+  register: metallb_pods
+  until: metallb_pods.resources | length > 0
+  retries: 10
+  delay: 10
+  delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+  run_once: true
+
+- name: Install monitoring stack
+  when: install_monitoring | bool
+  block:
+    - name: Create monitoring namespace
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/rke2/rke2.yaml
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: monitoring
+      delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+      run_once: true
+
+    - name: Deploy Prometheus stack
+      kubernetes.core.helm:
+        kubeconfig: /etc/rancher/rke2/rke2.yaml
+        name: prometheus
+        chart_ref: prometheus-community/kube-prometheus-stack
+        release_namespace: monitoring
+        values_files:
+          - files/monitoring/prometheus-values.yml
+      delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+      run_once: true
+      register: prometheus_install
+      until: prometheus_install is not failed
+      retries: 3
+      delay: 10
+
+- name: Install NGINX Ingress Controller
+  when: install_ingress | bool
+  kubernetes.core.helm:
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+    name: ingress-nginx
+    chart_ref: ingress-nginx/ingress-nginx
+    release_namespace: ingress-nginx
+    create_namespace: true
+  delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+  run_once: true
+
+- name: Verify Ingress Controller deployment
+  when: install_ingress | bool
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: ingress-nginx
+    label_selectors:
+      - app.kubernetes.io/component=controller
+  register: ingress_pods
+  until: ingress_pods.resources | length > 0
+  retries: 10
+  delay: 10
+  delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+  run_once: true

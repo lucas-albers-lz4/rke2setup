@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  role_name: rke2-cluster
+  author: Your Name
+  description: Ansible role to deploy RKE2 Kubernetes clusters in both three-node and six-node configurations
+  license: MIT
+  min_ansible_version: "2.12"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+
+  galaxy_tags:
+    - kubernetes
+    - rke2
+    - rancher
+    - container
+    - orchestration
+    - cluster
+    - k8s
+
+dependencies: []
+
+collections:
+  - kubernetes.core
+  - community.general

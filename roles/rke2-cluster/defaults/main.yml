@@ -1,0 +1,60 @@
+---
+# Version Control
+# RKE2 version configuration
+rke2_version: "v1.24.12+rke2r1"
+rke2_channel: "stable"
+rke2_install_url: "https://get.rke2.io"
+rke2_actual_version: "{{ rke2_version }}"
+
+# System Paths
+paths:
+  rke2:
+    config: "/etc/rancher/rke2"
+    data: "/var/lib/rancher/rke2"
+    bin: "/var/lib/rancher/rke2/bin"
+    kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+    token: "/var/lib/rancher/rke2/server/node-token"
+  user:
+    kube_dir: "~/.kube"
+    kubeconfig: "~/.kube/config"
+
+# Service Names
+services:
+  server: "rke2-server"
+  agent: "rke2-agent"
+
+# Kernel Parameters
+kernel_params:
+  - {key: "net.bridge.bridge-nf-call-iptables", value: "1"}
+  - {key: "net.ipv4.ip_forward", value: "1"}
+  - {key: "net.bridge.bridge-nf-call-ip6tables", value: "1"}
+  - {key: "vm.swappiness", value: "0"}
+
+# Default timeouts
+wait_config:
+  retries: 30
+  delay: 10
+
+# Command Paths
+commands:
+  kubectl: "/var/lib/rancher/rke2/bin/kubectl"
+  rke2: "/var/lib/rancher/rke2/bin/rke2"
+
+# Install Types
+install_types:
+  server: "server"
+  agent: "agent"
+
+# Additional variables that should be defined
+cluster_type: "three_node"
+server_url: "https://{{ hostvars[groups['three_node_control_plane'][0]]['ansible_host'] }}:9345"
+token: "{{ lookup('file', '/path/to/your/token/file') }}"
+
+# Binary paths
+rke2_binary_path: "/var/lib/rancher/rke2/bin"
+kubectl_path: "/usr/local/bin/kubectl"
+
+
+
+# Default token if not generated
+rke2_token: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"

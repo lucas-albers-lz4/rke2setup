@@ -1,0 +1,121 @@
+---
+- name: Cleanup RKE2 Installation
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    cleanup_paths:
+      killall: "/usr/local/bin/rke2-killall.sh"
+      uninstall: "/usr/local/bin/rke2-uninstall.sh"
+    data_dirs:
+      - /var/lib/rancher/rke2
+      - /etc/rancher/rke2
+      - /var/lib/kubelet
+      - /var/lib/containerd
+      - /var/lib/rancher/rke2/bin
+      - /etc/systemd/system/rke2*
+      - /usr/local/lib/systemd/system/rke2*
+    binary_files:
+      - /usr/local/bin/rke2
+      - /usr/local/bin/kubectl
+      - /usr/local/bin/crictl
+      - /usr/local/bin/rke2-killall.sh
+      - /usr/local/bin/rke2-uninstall.sh
+      - /usr/local/bin/containerd
+      - /usr/local/bin/runc
+      - /usr/local/bin/ctr
+  
+  tasks:
+    - name: Warning - RKE2 will be removed
+      pause:
+        seconds: 15
+        prompt: |
+          
+          ⚠️  WARNING: RKE2 will be completely removed from these hosts:
+          
+          {{ ansible_play_hosts | join(', ') }}
+          
+          Press Ctrl+C NOW to abort!
+          Waiting...
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Stop and disable all RKE2-related services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      with_items:
+        - rke2-server.service
+        - rke2-agent.service
+        - rke2-container-runtime.service
+      ignore_errors: true
+
+    - name: Run killall script if exists
+      shell: "{{ cleanup_paths.killall }}"
+      ignore_errors: true
+
+    - name: Wait for processes to be killed
+      wait_for:
+        timeout: 10
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Run uninstall script if exists
+      shell: "{{ cleanup_paths.uninstall }}"
+      ignore_errors: true
+
+    - name: Remove RKE2 directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items: "{{ data_dirs }}"
+      ignore_errors: true
+
+    - name: Remove RKE2 binary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items: "{{ binary_files }}"
+      ignore_errors: true
+
+    - name: Remove systemd unit files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_fileglob:
+        - "/etc/systemd/system/rke2*"
+        - "/usr/local/lib/systemd/system/rke2*"
+      ignore_errors: true
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Clean up remaining files and directories
+      shell: |
+        rm -rf /etc/rancher/rke2
+        rm -rf /var/lib/rancher/rke2
+        rm -rf /var/lib/kubelet
+        rm -rf /var/lib/containerd
+        rm -rf /run/k3s
+        rm -rf /run/containerd
+      ignore_errors: true
+
+    - name: Verify cleanup
+      stat:
+        path: "{{ item }}"
+      register: cleanup_check
+      with_items:
+        - /usr/local/bin/rke2
+        - /var/lib/rancher/rke2
+        - /etc/rancher/rke2
+        - /etc/systemd/system/rke2-server.service
+
+    - name: Show cleanup status
+      debug:
+        msg: "Warning: {{ item.item }} still exists"
+      when: item.stat.exists
+      with_items: "{{ cleanup_check.results }}"

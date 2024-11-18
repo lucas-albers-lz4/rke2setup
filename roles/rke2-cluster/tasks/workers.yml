@@ -1,0 +1,125 @@
+---
+- name: Create RKE2 config directory on workers
+  ansible.builtin.file:
+    path: "{{ paths.rke2.config }}"
+    state: directory
+    mode: '0755'
+
+- name: Configure worker nodes
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  vars:
+    node_type: "{{ install_types.agent }}"
+    is_first_server: false
+
+- name: Download RKE2 agent installation script
+  ansible.builtin.get_url:
+    url: "{{ rke2_install_url }}"
+    dest: /tmp/install.sh
+    mode: '0755'
+
+- name: Install RKE2 agent
+  shell: INSTALL_RKE2_TYPE="{{ install_types.agent }}" sh /tmp/install.sh
+  args:
+    creates: /usr/local/bin/rke2
+
+- name: Debug - Worker node installation status
+  stat:
+    path: "{{ item }}"
+  register: rke2_files
+  with_items:
+    - "{{ paths.rke2.binary }}"
+    - "{{ paths.rke2.data }}/bin/rke2"
+    - "{{ paths.rke2.config }}"
+
+- name: Debug - Show RKE2 file status
+  debug:
+    msg: "{{ item.item }} exists: {{ item.stat.exists }}"
+  loop: "{{ rke2_files.results }}"
+
+- name: Verify RKE2 installation
+  block:
+    - name: Check RKE2 version (primary path)
+      command: "{{ paths.rke2.binary }} --version"
+      register: rke2_version_check
+      changed_when: false
+  rescue:
+    - name: Check RKE2 version (alternate path)
+      command: "{{ paths.rke2.data }}/bin/rke2 --version"
+      register: rke2_version_check
+      changed_when: false
+  always:
+    - name: Debug - RKE2 version check result
+      debug:
+        msg:
+          - "Version check stdout: {{ rke2_version_check.stdout | default('N/A') }}"
+          - "Version check stderr: {{ rke2_version_check.stderr | default('N/A') }}"
+      when: rke2_version_check is defined
+
+- name: Start and enable RKE2 agent service
+  ansible.builtin.systemd:
+    name: "{{ services.agent }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Verify RKE2 agent service status
+  ansible.builtin.systemd:
+    name: "{{ services.agent }}"
+    state: started
+  register: service_status
+  until: service_status.status.ActiveState == "active"
+  retries: "{{ wait_config.retries }}"
+  delay: "{{ wait_config.delay }}"
+
+- name: Wait for worker node to be ready
+  ansible.builtin.command: 
+    cmd: kubectl get nodes {{ inventory_hostname }}
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+  delegate_to: "{{ groups['three_node_control_plane' if cluster_type == 'three_node' else 'control_plane_nodes'][0] }}"
+  register: node_status
+  until: node_status.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Debug - Show worker setup variables
+  debug:
+    msg:
+      - "Node Name: {{ inventory_hostname }}"
+      - "Install Types: {{ install_types | default('undefined') }}"
+      - "Server URL: {{ server_url | default('undefined') }}"
+      - "Token: {{ token | default('undefined') | regex_replace('^(.{8}).*(.{8})$', '\\1...\\2') }}"
+
+- name: Assert worker setup requirements
+  assert:
+    that:
+      - install_types is defined
+      - install_types.agent is defined
+      - server_url is defined
+      - token is defined
+    fail_msg: "Required worker setup variables are not properly defined"
+    success_msg: "All required worker setup variables are properly defined"
+
+- name: Check RKE2 binary existence
+  stat:
+    path: /usr/local/bin/rke2
+  register: rke2_binary
+
+- name: Debug - RKE2 binary status
+  debug:
+    msg: "RKE2 binary exists: {{ rke2_binary.stat.exists }}"
+
+- name: Check RKE2 agent service status
+  service:
+    name: rke2-agent
+    state: started
+  register: rke2_agent_service
+  ignore_errors: yes
+
+- name: Debug - RKE2 agent service status
+  debug:
+    msg: "RKE2 agent service status: {{ rke2_agent_service.state | default('unknown') }}"
