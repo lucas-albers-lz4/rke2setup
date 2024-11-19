@@ -47,22 +47,8 @@
   environment:
     INSTALL_RKE2_METHOD: tar
 
-- name: Wait for first control plane to be ready
-  ansible.builtin.wait_for:
-    host: "{{ groups['control_plane_nodes'][0] }}"
-    port: 9345
-    timeout: 600
-    delay: 30
-    connect_timeout: 5
-  delegate_to: localhost
-  become: false
-  when: inventory_hostname != groups['control_plane_nodes'][0]
-  register: wait_result
-
-- name: Debug first control plane status
-  ansible.builtin.debug:
-    msg: "First control plane status: {{ wait_result }}"
-  when: wait_result is defined
+- name: Wait for first control plane readiness
+  ansible.builtin.include_tasks: wait_for_server.yml
 
 - name: Enable and start RKE2 server
   block:
@@ -73,18 +59,26 @@
         state: started
         daemon_reload: true
       register: rke2_service
+
+    - name: Wait for local node readiness
+      ansible.builtin.shell: |
+        {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: node_ready
+      until: node_ready.stdout == "True"
+      retries: 30
+      delay: 10
+      changed_when: false
   rescue:
-    - name: Get RKE2 server logs
+    - name: Get RKE2 server logs on failure
       ansible.builtin.command: journalctl -u rke2-server.service --no-pager -n 50
       register: rke2_logs
 
-    - name: Display RKE2 server logs
+    - name: Display RKE2 logs
       ansible.builtin.debug:
         var: rke2_logs.stdout_lines
-
-    - name: Fail with service error
-      ansible.builtin.fail:
-        msg: "RKE2 server service failed to start. Check the logs above for details."
 
 - name: Verify RKE2 server installation
   ansible.builtin.stat:
