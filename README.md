@@ -84,13 +84,13 @@ worker3 192.168.1.26
 ./scripts/update_inventory.sh
 ```
 
-3. Deploy your chosen cluster type:
+3. Deploy the cluster:
 ```bash
-# For three-node cluster
-ansible-playbook -i inventory/rke2.yml three-node-cluster.yml
+# Clean and deploy
+ansible-playbook -i inventory/rke2.yml verify_hosts.yml cleanup.yml rke2.yml
 
-# For six-node cluster
-ansible-playbook -i inventory/rke2.yml six-node-cluster.yml
+# Deploy only (no cleanup)
+ansible-playbook -i inventory/rke2.yml verify_hosts.yml rke2.yml
 ```
 
 ## Prerequisites Setup
