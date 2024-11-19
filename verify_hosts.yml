@@ -1,0 +1,61 @@
+---
+- name: Verify Host Information and Connectivity
+  hosts: six_node_cluster
+  gather_facts: true
+  become: false
+  tasks:
+    - name: Gather basic host information
+      block:
+        - name: Display Hostname
+          ansible.builtin.command: hostname
+          register: hostname_result
+          changed_when: false
+
+        - name: Display IP Address
+          ansible.builtin.shell: hostname -I
+          register: ip_address_result
+          changed_when: false
+
+        - name: Ping localhost
+          ansible.builtin.ping:
+
+        - name: Detailed Host Information
+          ansible.builtin.debug:
+            msg:
+              - "Hostname: {{ hostname_result.stdout }}"
+              - "Ansible Hostname: {{ inventory_hostname }}"
+              - "Ansible Host IP: {{ ansible_host }}"
+              - "All IP Addresses: {{ ip_address_result.stdout }}"
+
+    - name: Ping all hosts
+      ansible.builtin.shell: ping -c 4 {{ ansible_host }}
+      changed_when: false
+      register: ping_result
+
+    - name: Display Ping Results
+      ansible.builtin.debug:
+        var: ping_result.stdout_lines
+      when: ping_result is defined
+
+- name: Verify Network Connectivity Between Hosts
+  hosts: six_node_cluster
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Ping all other hosts from each host
+      ansible.builtin.shell: |
+        {% raw %}
+        {% for host in groups['six_node_cluster'] %}
+        {% if host != inventory_hostname %}
+        echo "Pinging {{ host }} ({{ hostvars[host]['ansible_host'] }}):"
+        ping -c 4 {{ hostvars[host]['ansible_host'] }}
+        {% endif %}
+        {% endfor %}
+        {% endraw %}
+      register: inter_host_ping
+      changed_when: false
+      failed_when: false
+
+    - name: Display Inter-Host Ping Results
+      ansible.builtin.debug:
+        var: inter_host_ping.stdout_lines
