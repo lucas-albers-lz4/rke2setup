@@ -1,0 +1,115 @@
+---
+- name: Initialize RKE2 state tracking
+  ansible.builtin.set_fact:
+    rke2_states:
+      INIT: 
+        pattern: "Starting rke2"
+        completed: false
+        timestamp: null
+      ETCD: 
+        pattern: "etcd data store connection OK"
+        completed: false
+        timestamp: null
+      API_SERVER:
+        pattern: "Kube API server is now running"
+        completed: false
+        timestamp: null
+      CONTROLLERS:
+        pattern: "Starting managed etcd node metadata controller"
+        completed: false
+        timestamp: null
+      RUNNING:
+        pattern: "rke2 is up and running"
+        completed: false
+        timestamp: null
+    rke2_errors: []
+
+- name: Check existing journal for completed states
+  ansible.builtin.shell: |
+    journalctl -u rke2-server --no-pager -n 1000 | while read -r line; do
+      timestamp=$(echo "$line" | awk '{print $1" "$2" "$3}')
+      {% for state, info in rke2_states.items() %}
+      if [[ $line =~ "{{ info.pattern }}" ]]; then
+        echo "{{ state }}|$timestamp"
+      fi
+      # Check for errors that might invalidate previous success
+      if [[ $line =~ "level=fatal" ]] || [[ $line =~ "Failed to start" ]]; then
+        echo "ERROR|$timestamp|$line"
+      fi
+      {% endfor %}
+    done
+  register: existing_states
+  changed_when: false
+
+- name: Process existing state information
+  ansible.builtin.set_fact:
+    rke2_states: >-
+      {{ rke2_states | combine({
+        item.split('|')[0]: {
+          'pattern': rke2_states[item.split('|')[0]].pattern,
+          'completed': true,
+          'timestamp': item.split('|')[1:]|join('|')
+        }
+      }) }}
+  loop: "{{ existing_states.stdout_lines }}"
+  when: "item.split('|')[0] != 'ERROR'"
+
+- name: Check if service is already running successfully
+  ansible.builtin.set_fact:
+    rke2_fully_running: "{{ 
+      rke2_states.RUNNING.completed and 
+      not (existing_states.stdout_lines | select('match', '^ERROR.*') | list)
+    }}"
+
+- name: Display current RKE2 state
+  ansible.builtin.debug:
+    msg: 
+      - "Current RKE2 State:"
+      - "{% for state, info in rke2_states.items() %}"
+      - "  {{ state }}: {{ 'COMPLETED' if info.completed else 'PENDING' }} {{ info.timestamp if info.timestamp else '' }}"
+      - "{% endfor %}"
+
+- name: Start live monitoring if not fully running
+  when: not rke2_fully_running
+  block:
+    - name: Create progress tracking directory
+      file:
+        path: "/var/log/rke2-init"
+        state: directory
+        mode: '0755'
+
+    - name: Monitor RKE2 initialization
+      ansible.builtin.shell: |
+        echo "Starting RKE2 monitoring at $(date)" > /var/log/rke2-init/progress
+        {% for state, info in rke2_states.items() %}
+        {% if not info.completed %}
+        echo "Waiting for {{ state }}..." >> /var/log/rke2-init/progress
+        {% endif %}
+        {% endfor %}
+
+        journalctl -u rke2-server -f -n 0 | while read -r line; do
+          timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+          {% for state, info in rke2_states.items() %}
+          {% if not info.completed %}
+          if [[ $line =~ "{{ info.pattern }}" ]]; then
+            echo "[$timestamp] [{{ state }}] Completed" >> /var/log/rke2-init/progress
+          fi
+          {% endif %}
+          {% endfor %}
+          
+          if [[ $line =~ "level=fatal" ]] || [[ $line =~ "Failed to start" ]]; then
+            echo "[$timestamp] [ERROR] $line" >> /var/log/rke2-init/progress
+          fi
+        done &
+      async: "{{ rke2_monitor_timeout | default(600) }}"
+      poll: 0
+      register: monitor_job
+
+    - name: Display initialization progress
+      ansible.builtin.shell: cat /var/log/rke2-init/progress
+      register: init_progress
+      until: >-
+        '[COMPLETE] RKE2 is fully operational' in init_progress.stdout or 
+        '[ERROR]' in init_progress.stdout
+      retries: "{{ (rke2_monitor_timeout | default(600)) // (rke2_monitor_interval | default(10)) }}"
+      delay: "{{ rke2_monitor_interval | default(10) }}"
