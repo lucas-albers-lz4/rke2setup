@@ -49,15 +49,16 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
             if not line or line.startswith('#'):
                 continue
                 
-            if '[six_node]' in line:
-                in_six_node = True
+            # Check for section headers
+            if line.startswith('['):
+                in_six_node = (line == '[six_node]')
                 continue
                 
-            if in_six_node and line:
+            if in_six_node:
                 # Parse hostname and IP
                 parts = line.split()
                 if len(parts) < 2:
-                    raise ValueError(f"Line {line_number}: Missing IP address for host {line}")
+                    continue  # Skip lines without IP addresses (like group headers)
                 
                 hostname = parts[0]
                 # Join remaining parts and remove any spaces
@@ -118,6 +119,33 @@ def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tupl
 
     return inventory
 
+def generate_tls_sans(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> List[str]:
+    """Generate TLS SANs from node information."""
+    tls_sans = set([
+        # Kubernetes system names
+        "kubernetes",
+        "kubernetes.default",
+        "kubernetes.default.svc",
+        "kubernetes.default.svc.cluster.local",
+        # Local access
+        "localhost",
+        "127.0.0.1"
+    ])
+    
+    # Add control plane nodes
+    for hostname, ip in control_plane_nodes:
+        tls_sans.add(hostname)
+        tls_sans.add(f"{hostname}.home.arpa")
+        tls_sans.add(ip)
+    
+    # Add worker nodes
+    for hostname, ip in worker_nodes:
+        tls_sans.add(hostname)
+        tls_sans.add(f"{hostname}.home.arpa")
+        tls_sans.add(ip)
+    
+    return sorted(list(tls_sans))
+
 def main():
     parser = argparse.ArgumentParser(description='Generate RKE2 cluster inventory')
     parser.add_argument('hosts_file', help='Path to hosts.txt file')
@@ -129,9 +157,19 @@ def main():
         control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
         inventory = generate_inventory(control_plane_nodes, worker_nodes)
         
-        with open(args.output, 'w') as f:
+        # Generate TLS SANs and add to inventory vars
+        tls_sans = generate_tls_sans(control_plane_nodes, worker_nodes)
+        inventory['all']['vars']['tls_sans'] = tls_sans
+        
+        # Ensure inventory directory exists
+        output_path = Path(args.output)
+        output_path.parent.mkdir(exist_ok=True)
+        
+        with open(output_path, 'w') as f:
             f.write(WARNING_HEADER)
             yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2)
+            
+        print(f"Generated inventory with TLS SANs at {args.output}")
     except ValueError as e:
         print(f"Error: {e}")
 
