@@ -53,17 +53,20 @@
   when: inventory_hostname in groups['control_plane_nodes']
 
 - name: Ensure .kube directory exists on worker nodes
-  file:
-    path: "/home/ubuntu/.kube"
+  ansible.builtin.file:
+    path: "{{ paths.user.kube_dir }}"
     state: directory
-    owner: ubuntu
-    group: ubuntu
     mode: '0700'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
   when: inventory_hostname in groups['worker_nodes']
 
 - name: Copy kubeconfig from first control plane to workers
-  synchronize:
-    src: "/home/ubuntu/.kube/config"
-    dest: "/home/ubuntu/.kube/config"
+  ansible.builtin.copy:
+    src: "{{ paths.user.kubeconfig }}"
+    dest: "{{ paths.user.kubeconfig }}"
+    mode: '0600'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
   delegate_to: "{{ groups['control_plane_nodes'][0] }}"
   when: inventory_hostname in groups['worker_nodes']
