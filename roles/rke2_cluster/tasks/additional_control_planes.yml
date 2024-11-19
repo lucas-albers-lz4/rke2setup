@@ -38,14 +38,13 @@
   register: rke2_installer
 
 - name: Install RKE2 server
-  ansible.builtin.shell: |
+  shell: |
     set -o pipefail
     INSTALL_RKE2_TYPE=server sh /tmp/rke2-install.sh
-  args:
-    creates: "{{ commands.rke2 }}"
-    executable: /bin/bash
-  environment:
-    INSTALL_RKE2_METHOD: tar
+  register: install_result
+
+- name: Verify RKE2 installation
+  include_tasks: verify_rke2_install.yml
 
 - name: Wait for first control plane readiness
   ansible.builtin.include_tasks: wait_for_server.yml
