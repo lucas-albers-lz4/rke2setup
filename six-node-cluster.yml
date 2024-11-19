@@ -3,6 +3,7 @@
   hosts: six_node_cluster
   gather_facts: true
   become: true
+  strategy: linear
 
   pre_tasks:
     - name: Set cluster type
@@ -16,3 +17,6 @@
 
   roles:
     - role: rke2_cluster
+      vars:
+        control_plane_nodes: "{{ groups['control_plane_nodes'] }}"
+        worker_nodes: "{{ groups['worker_nodes'] }}"

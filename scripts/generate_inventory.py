@@ -21,24 +21,26 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     
     with open(hosts_file, 'r') as f:
         lines = f.readlines()
-        in_three_node = False
+        in_six_node = False
         
         for line in lines:
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
                 
-            if '[three_node]' in line:
-                in_three_node = True
+            if '[six_node]' in line:
+                in_six_node = True
                 continue
                 
-            if in_three_node and line:
+            if in_six_node and line:
                 # Parse hostname and IP
                 parts = line.split()
                 if len(parts) >= 2:
                     hostname = parts[0]
                     ip = parts[1]
-                    if not control_plane_nodes:
+                    
+                    # First 3 nodes are control plane, next 3 are workers
+                    if len(control_plane_nodes) < 3:
                         control_plane_nodes.append((hostname, ip))
                     else:
                         worker_nodes.append((hostname, ip))
@@ -50,12 +52,12 @@ def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tupl
     inventory = {
         'all': {
             'children': {
-                'three_node_cluster': {
+                'six_node_cluster': {
                     'children': {
-                        'three_node_control_plane': {
+                        'control_plane_nodes': {
                             'hosts': {}
                         },
-                        'three_node_worker': {
+                        'worker_nodes': {
                             'hosts': {}
                         }
                     }
@@ -69,15 +71,15 @@ def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tupl
         }
     }
 
-    # Add control plane node
+    # Add control plane nodes
     for hostname, ip in control_plane_nodes:
-        inventory['all']['children']['three_node_cluster']['children']['three_node_control_plane']['hosts'][hostname] = {
+        inventory['all']['children']['six_node_cluster']['children']['control_plane_nodes']['hosts'][hostname] = {
             'ansible_host': ip
         }
 
     # Add worker nodes
     for hostname, ip in worker_nodes:
-        inventory['all']['children']['three_node_cluster']['children']['three_node_worker']['hosts'][hostname] = {
+        inventory['all']['children']['six_node_cluster']['children']['worker_nodes']['hosts'][hostname] = {
             'ansible_host': ip
         }
 
