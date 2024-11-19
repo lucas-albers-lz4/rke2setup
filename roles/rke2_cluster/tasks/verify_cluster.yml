@@ -2,25 +2,21 @@
 - name: Wait for all nodes to be ready
   ansible.builtin.shell: |
     set -o pipefail
-    {{ paths.rke2.bin }}/kubectl get nodes | grep -v NotReady | grep Ready | wc -l
+    {{ paths.rke2.bin }}/kubectl get nodes
   args:
     executable: /bin/bash
-  register: ready_nodes
-  until: ready_nodes.stdout | int >= (groups['three_node_cluster'] | length)
+  register: node_list
+  until: 
+    - node_list.rc == 0
+    - (node_list.stdout_lines | length) > 1  # Ensure more than just the header
+    - (node_list.stdout | regex_findall('Ready') | length) == (groups['three_node_cluster'] | length)
   retries: 30
   delay: 10
   changed_when: false
   environment:
     KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
 
-- name: Verify cluster node status
-  ansible.builtin.command:
-    cmd: "{{ paths.rke2.bin }}/kubectl get nodes"
-  register: node_status
-  changed_when: false
-  environment:
-    KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-
-- name: Display node status
+- name: Display detailed node status
   ansible.builtin.debug:
-    var: node_status.stdout_lines
+    var: node_list.stdout_lines
+  when: node_list is defined
