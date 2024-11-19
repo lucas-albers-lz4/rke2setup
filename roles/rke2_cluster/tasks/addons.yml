@@ -1,45 +1,8 @@
 ---
 - name: Verify cluster configuration
-  ansible.builtin.debug:
-    msg:
-      - "Cluster Type: {{ cluster_type }}"
-      - "Control Plane Nodes: {{ groups[cluster_type + '_control_plane'] }}"
-  when: inventory_hostname == groups[cluster_type + '_control_plane'].0
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == groups['control_plane_nodes'][0]
+    fail_msg: "Add-ons must be installed from the first control plane node"
 
-- name: Wait for cluster to be ready before installing add-ons
-  when: inventory_hostname == groups[cluster_type + '_control_plane'].0
-  block:
-    - name: Ensure cluster is ready
-      ansible.builtin.shell: |
-        set -o pipefail
-        {{ paths.rke2.bin }}/kubectl wait --for=condition=Ready nodes --all --timeout=300s
-      args:
-        executable: /bin/bash
-      register: cluster_ready
-      until: cluster_ready.rc == 0
-      retries: 10
-      delay: 30
-      changed_when: false
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-
-- name: Install additional cluster add-ons
-  when:
-    - inventory_hostname == groups[cluster_type + '_control_plane'].0
-    - install_cilium | default(true)
-  block:
-    - name: Install Cilium CNI
-      ansible.builtin.command:
-        cmd: "{{ paths.rke2.bin }}/kubectl create -f https://raw.githubusercontent.com/cilium/cilium/v1.14.0/install/kubernetes/quick-install.yaml"
-      register: cilium_install
-      changed_when: false
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-
-    - name: Verify Cilium installation
-      ansible.builtin.command:
-        cmd: "{{ paths.rke2.bin }}/kubectl -n kube-system get ds cilium"
-      register: cilium_status
-      changed_when: false
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+# Continue with add-ons installation
