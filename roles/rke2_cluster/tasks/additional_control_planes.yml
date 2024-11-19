@@ -51,10 +51,18 @@
   ansible.builtin.wait_for:
     host: "{{ groups['control_plane_nodes'][0] }}"
     port: 9345
-    timeout: 300
+    timeout: 600
+    delay: 30
+    connect_timeout: 5
   delegate_to: localhost
   become: false
   when: inventory_hostname != groups['control_plane_nodes'][0]
+  register: wait_result
+
+- name: Debug first control plane status
+  ansible.builtin.debug:
+    msg: "First control plane status: {{ wait_result }}"
+  when: wait_result is defined
 
 - name: Enable and start RKE2 server
   block:
