@@ -4,6 +4,9 @@
     path: /etc/rancher/rke2
     state: directory
     mode: '0755'
+    owner: root
+    group: root
+  become: true
 
 - name: Configure worker nodes
   block:

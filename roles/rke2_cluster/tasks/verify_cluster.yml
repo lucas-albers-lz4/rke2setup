@@ -1,85 +1,32 @@
 ---
-- name: Detailed cluster readiness check
+- name: Verify cluster health
   block:
-    - name: Capture cluster node details
-      ansible.builtin.command:
-        cmd: "{{ paths.rke2.bin }}/kubectl get nodes -o wide"
-      register: node_details
-      changed_when: false
-      failed_when: false
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-
-    - name: Debug node details
-      ansible.builtin.debug:
-        msg: 
-          - "Raw Node Details:"
-          - "{{ node_details.stdout_lines | default(['No node information available']) }}"
-          - "Node Details RC: {{ node_details.rc }}"
-          - "Node Details Error: {{ node_details.stderr | default('No stderr') }}"
-
-    - name: Detailed node readiness check
+    - name: Wait for all control plane nodes
       ansible.builtin.shell: |
         set -o pipefail
-        {{ paths.rke2.bin }}/kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+        READY_CP=$({{ paths.rke2.bin }}/kubectl get nodes --selector=node.kubernetes.io/instance-type=control-plane \
+          -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{end}' | grep -c True)
+        TOTAL_CP=$({{ paths.rke2.bin }}/kubectl get nodes --selector=node.kubernetes.io/instance-type=control-plane \
+          -o name | wc -l)
+        echo "Ready CP: $READY_CP, Total CP: $TOTAL_CP"
+        test "$READY_CP" -eq "$TOTAL_CP"
       args:
         executable: /bin/bash
-      register: node_readiness
-      changed_when: false
-      failed_when: false
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-
-    - name: Debug node readiness
-      ansible.builtin.debug:
-        msg: 
-          - "Node Readiness Details:"
-          - "{{ node_readiness.stdout_lines | default(['No readiness information']) }}"
-          - "Readiness Check RC: {{ node_readiness.rc }}"
-          - "Readiness Check Error: {{ node_readiness.stderr | default('No stderr') }}"
-
-    - name: Wait for all nodes to be ready
-      ansible.builtin.shell: |
-        set -o pipefail
-        READY_NODES=$({{ paths.rke2.bin }}/kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{end}' | grep -c True)
-        TOTAL_NODES=$({{ paths.rke2.bin }}/kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | wc -l)
-        echo "Ready Nodes: $READY_NODES, Total Nodes: $TOTAL_NODES"
-        test "$READY_NODES" -eq "$TOTAL_NODES"
-      args:
-        executable: /bin/bash
-      register: node_ready_check
-      until: node_ready_check.rc == 0
+      register: cp_ready_check
+      until: cp_ready_check.rc == 0
       retries: 30
       delay: 10
       changed_when: false
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
 
-    - name: Display final node readiness
-      ansible.builtin.debug:
-        msg: 
-          - "Final Node Readiness Check:"
-          - "{{ node_ready_check.stdout_lines | default(['No readiness information']) }}"
-          - "Readiness Check RC: {{ node_ready_check.rc }}"
-          - "Readiness Check Error: {{ node_ready_check.stderr | default('No stderr') }}"
-
-    - name: Wait for etcd to be ready
-      command: /var/lib/rancher/rke2/bin/kubectl get --raw='/healthz/etcd'
+    - name: Verify etcd health
+      ansible.builtin.shell: |
+        {{ paths.rke2.bin }}/kubectl get --raw=/healthz/etcd
       register: etcd_health
-      until: etcd_health.rc == 0
+      until: etcd_health.stdout == "ok"
       retries: 30
       delay: 10
-      when: inventory_hostname == groups['control_plane_nodes'][0]
-  rescue:
-    - name: Capture cluster status on failure
-      ansible.builtin.command:
-        cmd: "{{ paths.rke2.bin }}/kubectl cluster-info"
-      register: cluster_info
       changed_when: false
-      failed_when: false
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-
-    - name: Display cluster info
-      ansible.builtin.debug:
-        var: cluster_info.stdout_lines

@@ -30,40 +30,34 @@
       - "Node: {{ inventory_hostname }}"
       - "Readiness Status: {{ node_readiness.stdout | default('Unknown') }}"
 
-- name: Verify RKE2 server service
-  ansible.builtin.systemd:
-    name: rke2-server
-    state: started
-  register: rke2_service_status
-  failed_when: false
+- name: Comprehensive control plane readiness check
+  block:
+    - name: Wait for RKE2 server service
+      ansible.builtin.systemd:
+        name: rke2-server
+        state: started
+      register: rke2_service
+      until: rke2_service.status.ActiveState == "active"
+      retries: 30
+      delay: 10
 
-- name: Final wait for server readiness
-  ansible.builtin.wait_for:
-    host: "{{ ansible_host }}"
-    port: 6443
-    timeout: 300
-    state: started
-  failed_when: false
+    - name: Wait for supervisor and API ports
+      ansible.builtin.wait_for:
+        host: "{{ item.host }}"
+        port: "{{ item.port }}"
+        timeout: 300
+        state: started
+      loop:
+        - { host: "{{ groups['control_plane_nodes'][0] }}", port: 9345 }
+        - { host: "{{ groups['control_plane_nodes'][0] }}", port: 6443 }
+      register: port_check
 
-- name: Wait for RKE2 server to be ready
-  ansible.builtin.wait_for:
-    host: "{{ first_server_ip }}"
-    port: 6443
-    state: started
-    timeout: 300
-  register: server_wait
-  retries: 30
-  delay: 10
-  until: server_wait is success
-  when: not (inventory_hostname == groups['control_plane_nodes'][0])
-
-- name: Verify server connectivity
-  ansible.builtin.uri:
-    url: "https://{{ first_server_ip }}:6443/healthz"
-    validate_certs: false
-    return_content: true
-  register: healthz_check
-  until: healthz_check.content == "ok"
-  retries: 30
-  delay: 10
-  when: not (inventory_hostname == groups['control_plane_nodes'][0])
+    - name: Verify API health
+      ansible.builtin.uri:
+        url: "https://{{ groups['control_plane_nodes'][0] }}:6443/healthz"
+        validate_certs: false
+        return_content: true
+      register: healthz_check
+      until: healthz_check.content == "ok"
+      retries: 30
+      delay: 10
