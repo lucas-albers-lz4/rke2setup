@@ -51,3 +51,28 @@
   ansible.builtin.debug:
     msg: "{{ item.item }} exists: {{ item.stat.exists }}"
   loop: "{{ rke2_files.results }}"
+
+- name: Validate token before configuration
+  block:
+    - name: Debug token availability
+      ansible.builtin.debug:
+        msg:
+          - "Token status: {{ rke2_token is defined }}"
+          - "Token length: {{ rke2_token | default('UNDEFINED') | length }}"
+          - "Current host: {{ inventory_hostname }}"
+          - "First control plane: {{ groups['three_node_control_plane'][0] }}"
+
+    - name: Fail with detailed token information if undefined
+      ansible.builtin.fail:
+        msg: |
+          CRITICAL: RKE2 token is undefined
+          Possible causes:
+          - Token generation failed in first_control_plane.yml
+          - Fact sharing between hosts did not work
+          - Playbook run order is incorrect
+          
+          Debugging steps:
+          1. Verify first_control_plane.yml runs successfully
+          2. Check fact gathering settings
+          3. Ensure token is set on first control plane node
+          4. Run with -vvv for more details

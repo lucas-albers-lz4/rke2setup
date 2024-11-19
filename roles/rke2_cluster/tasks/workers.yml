@@ -43,18 +43,64 @@
     msg: "{{ item.item }} exists: {{ item.stat.exists }}"
   loop: "{{ rke2_files.results }}"
 
+- name: Capture service status before start
+  ansible.builtin.command:
+    cmd: systemctl status rke2-agent
+  register: pre_service_status
+  failed_when: false
+  changed_when: false
+
 - name: Start and enable RKE2 agent service
   ansible.builtin.systemd:
-    name: "{{ services.agent }}"
+    name: rke2-agent
     state: started
     enabled: true
-    daemon_reload: true
+  register: agent_start_result
 
-- name: Verify RKE2 agent service status
-  ansible.builtin.systemd:
-    name: "{{ services.agent }}"
-    state: started
-  register: service_status
-  until: service_status.status.ActiveState == "active"
-  retries: "{{ wait_config.retries }}"
-  delay: "{{ wait_config.delay }}"
+- name: Collect diagnostic information on failure
+  when: agent_start_result is failed
+  block:
+    - name: Get systemctl status
+      ansible.builtin.command:
+        cmd: systemctl status rke2-agent
+      register: service_status
+      failed_when: false
+
+    - name: Get recent journal entries
+      ansible.builtin.command:
+        cmd: journalctl -xeu rke2-agent.service --no-pager -n 50
+      register: journal_output
+      failed_when: false
+
+    - name: Check RKE2 agent logs
+      ansible.builtin.command:
+        cmd: cat /var/lib/rancher/rke2/agent/logs/rke2-agent.log
+      register: agent_logs
+      failed_when: false
+
+    - name: Display diagnostic information
+      ansible.builtin.debug:
+        msg: |
+          RKE2 Agent Service Failed to Start
+          
+          Pre-start status:
+          {{ pre_service_status.stdout }}
+          
+          Current status:
+          {{ service_status.stdout }}
+          
+          Journal entries:
+          {{ journal_output.stdout }}
+          
+          Agent logs:
+          {{ agent_logs.stdout }}
+
+    - name: Fail with detailed error
+      ansible.builtin.fail:
+        msg: |
+          RKE2 agent service failed to start. 
+          See above diagnostic information for details.
+          Common issues:
+          - Network connectivity to control plane
+          - Invalid token or server URL
+          - File permissions issues

@@ -5,31 +5,38 @@
     path: "{{ paths.rke2.config }}/config.yaml"
   register: rke2_config
 
-# Only generate token if this is a fresh installation
+# Attempt to read existing token if configuration exists
+- name: Read existing token
+  block:
+    - name: Slurp existing config
+      ansible.builtin.slurp:
+        src: "{{ paths.rke2.config }}/config.yaml"
+      register: existing_config
+      when: rke2_config.stat.exists
+
+    - name: Parse existing token
+      ansible.builtin.set_fact:
+        rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token | default(lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48')) }}"
+      when: existing_config is defined and existing_config.content is defined
+  rescue:
+    - name: Generate new token if parsing fails
+      ansible.builtin.set_fact:
+        rke2_token: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
+
+# Fallback to generating a new token if no existing configuration
 - name: Generate cluster token
   ansible.builtin.set_fact:
     rke2_token: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
-  run_once: true
-  delegate_to: localhost
-  when: not rke2_config.stat.exists
-
-# If config exists, read existing token
-- name: Read existing token
-  ansible.builtin.slurp:
-    src: "{{ paths.rke2.config }}/config.yaml"
-  register: existing_config
-  when: rke2_config.stat.exists
-
-- name: Set existing token
-  ansible.builtin.set_fact:
-    rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token }}"
-  when: rke2_config.stat.exists
+  when: rke2_token is not defined
 
 # Share token with other hosts
 - name: Share token with other hosts
-  ansible.builtin.set_fact:
-    rke2_token: "{{ hostvars[groups['three_node_control_plane'].0]['rke2_token'] }}"
-  when: inventory_hostname != groups['three_node_control_plane'].0
+  set_fact:
+    rke2_token: "{{ hostvars[groups['three_node_control_plane'][0]].rke2_token }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  with_items: "{{ groups['three_node_control_plane'][1:] }}"
+  when: inventory_hostname == groups['three_node_control_plane'][0]
 
 - name: Create RKE2 config directory
   ansible.builtin.file:
@@ -95,3 +102,27 @@
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: '0600'
+
+- name: Debug token generation process
+  block:
+    - name: Show existing configuration status
+      ansible.builtin.debug:
+        msg: 
+          - "RKE2 config exists: {{ rke2_config.stat.exists }}"
+          - "Inventory hostname: {{ inventory_hostname }}"
+          - "First control plane node: {{ groups['three_node_control_plane'][0] }}"
+
+    - name: Verbose token generation
+      ansible.builtin.debug:
+        msg: "Generating or retrieving token for {{ inventory_hostname }}"
+
+# Add firewall rules if needed
+- name: Configure required ports
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  with_items:
+    - 6443  # Kubernetes API
+    - 2379  # etcd client
+    - 2380  # etcd peer

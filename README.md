@@ -208,7 +208,7 @@ MIT
 
 ## Author
 
-Your Name <your.email@example.com>
+Lucas Albers 
 
 ## Deployment
 

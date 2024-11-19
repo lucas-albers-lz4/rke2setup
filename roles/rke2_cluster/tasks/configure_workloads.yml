@@ -1,0 +1,18 @@
+---
+- name: Verify control plane validation
+  ansible.builtin.fail:
+    msg: "Control plane validation must pass before configuring workloads"
+  when: not (hostvars[groups['three_node_control_plane'][0]]['control_plane_validated'] | default(false))
+
+- name: Configure node for workloads
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  vars:
+    node_labels:
+      - "node.kubernetes.io/instance-type=control-plane"
+      - "kubernetes.io/hostname={{ inventory_hostname }}"
+      - "workload.type=mixed"
+    node_taints:
+      - "CriticalAddonsOnly=true:NoSchedule-"
