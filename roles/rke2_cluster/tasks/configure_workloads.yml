@@ -2,7 +2,7 @@
 - name: Verify control plane validation
   ansible.builtin.fail:
     msg: "Control plane validation must pass before configuring workloads"
-  when: not (hostvars[groups['three_node_control_plane'][0]]['control_plane_validated'] | default(false))
+  when: not (hostvars[groups['control_plane_nodes'][0]]['control_plane_validated'] | default(false))
 
 - name: Configure node for workloads
   ansible.builtin.template:

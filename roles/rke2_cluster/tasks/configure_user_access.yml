@@ -32,4 +32,38 @@
   ansible.builtin.replace:
     path: /home/ubuntu/.kube/config
     regexp: 'server: https://127.0.0.1:6443'
-    replace: 'server: https://{{ ansible_host }}:6443'
+    replace: 'server: https://{{ first_server_ip }}:6443'
+  when: inventory_hostname != groups['control_plane_nodes'][0]
+
+- name: Wait for kubeconfig to be generated
+  wait_for:
+    path: /etc/rancher/rke2/rke2.yaml
+    state: present
+    timeout: 300
+  when: inventory_hostname in groups['control_plane_nodes']
+
+- name: Copy kubeconfig to user directory
+  copy:
+    src: /etc/rancher/rke2/rke2.yaml
+    dest: "/home/ubuntu/.kube/config"
+    remote_src: yes
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+  when: inventory_hostname in groups['control_plane_nodes']
+
+- name: Ensure .kube directory exists on worker nodes
+  file:
+    path: "/home/ubuntu/.kube"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0700'
+  when: inventory_hostname in groups['worker_nodes']
+
+- name: Copy kubeconfig from first control plane to workers
+  synchronize:
+    src: "/home/ubuntu/.kube/config"
+    dest: "/home/ubuntu/.kube/config"
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  when: inventory_hostname in groups['worker_nodes']

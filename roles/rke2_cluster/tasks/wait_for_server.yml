@@ -55,7 +55,7 @@
   retries: 30
   delay: 10
   until: server_wait is success
-  when: not (inventory_hostname == groups['three_node_control_plane'][0])
+  when: not (inventory_hostname == groups['control_plane_nodes'][0])
 
 - name: Verify server connectivity
   ansible.builtin.uri:
@@ -66,4 +66,4 @@
   until: healthz_check.content == "ok"
   retries: 30
   delay: 10
-  when: not (inventory_hostname == groups['three_node_control_plane'][0])
+  when: not (inventory_hostname == groups['control_plane_nodes'][0])

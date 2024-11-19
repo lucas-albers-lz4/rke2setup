@@ -2,56 +2,59 @@
 # First check if RKE2 is already installed and configured
 - name: Check if RKE2 is already configured
   ansible.builtin.stat:
-    path: "{{ paths.rke2.config }}/config.yaml"
+    path: /etc/rancher/rke2/config.yaml
   register: rke2_config
 
-# Attempt to read existing token if configuration exists
-- name: Read existing token
-  block:
-    - name: Slurp existing config
-      ansible.builtin.slurp:
-        src: "{{ paths.rke2.config }}/config.yaml"
-      register: existing_config
-      when: rke2_config.stat.exists
+- name: Slurp existing config
+  ansible.builtin.slurp:
+    src: /etc/rancher/rke2/config.yaml
+  register: rke2_config_content
+  when: rke2_config.stat.exists
 
-    - name: Parse existing token
-      ansible.builtin.set_fact:
-        rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token | default(lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48')) }}"
-      when: existing_config is defined and existing_config.content is defined
-  rescue:
-    - name: Generate new token if parsing fails
-      ansible.builtin.set_fact:
-        rke2_token: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
-
-# Fallback to generating a new token if no existing configuration
-- name: Generate cluster token
+- name: Parse existing token
   ansible.builtin.set_fact:
-    rke2_token: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
-  when: rke2_token is not defined
+    rke2_token: "{{ (rke2_config_content.content | b64decode | from_yaml).token }}"
+  when: rke2_config.stat.exists and rke2_config_content is defined
 
-# Share token with other hosts
+- name: Generate new token if none exists
+  block:
+    - name: Generate cluster token
+      ansible.builtin.shell: tr -dc A-Za-z0-9 </dev/urandom | head -c 64
+      register: token_result
+      when: not rke2_config.stat.exists
+
+    - name: Set RKE2 token from generation
+      ansible.builtin.set_fact:
+        rke2_token: "{{ token_result.stdout }}"
+      when: token_result is defined and token_result.stdout is defined
+  when: not rke2_config.stat.exists
+
+- name: Verify token is set
+  ansible.builtin.assert:
+    that: 
+      - rke2_token is defined
+      - rke2_token | string | length > 0
+    fail_msg: "Failed to set RKE2 token - neither existing token found nor new token generated"
+
 - name: Share token with other hosts
-  set_fact:
-    rke2_token: "{{ hostvars[groups['three_node_control_plane'][0]].rke2_token }}"
+  ansible.builtin.set_fact:
+    rke2_token: "{{ hostvars[groups['control_plane_nodes'][0]].rke2_token }}"
   delegate_to: "{{ item }}"
   delegate_facts: true
-  with_items: "{{ groups['three_node_control_plane'][1:] }}"
-  when: inventory_hostname == groups['three_node_control_plane'][0]
+  with_items: "{{ groups['all'] }}"
+  when: rke2_token is defined
 
 - name: Create RKE2 config directory
   ansible.builtin.file:
-    path: "{{ paths.rke2.config }}"
+    path: /etc/rancher/rke2
     state: directory
     mode: '0755'
 
 - name: Configure first control plane node
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: "{{ paths.rke2.config }}/config.yaml"
-    mode: '0644'
-  vars:
-    node_type: "{{ install_types.server }}"
-    is_first_server: true
+    dest: /etc/rancher/rke2/config.yaml
+    mode: '0600'
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:
@@ -73,11 +76,22 @@
         INSTALL_RKE2_METHOD: tar
 
 - name: Enable and start RKE2 server
-  ansible.builtin.systemd:
+  systemd:
     name: rke2-server
-    enabled: true
     state: started
-    daemon_reload: true
+    enabled: yes
+  register: rke2_service_result
+  ignore_errors: yes
+
+- name: Get RKE2 server logs if service failed
+  command: journalctl -xeu rke2-server.service
+  register: rke2_logs
+  when: rke2_service_result.failed
+
+- name: Display RKE2 server logs
+  debug:
+    var: rke2_logs.stdout_lines
+  when: rke2_logs is defined
 
 - name: Create kubectl symlink
   ansible.builtin.file:
@@ -110,7 +124,7 @@
         msg: 
           - "RKE2 config exists: {{ rke2_config.stat.exists }}"
           - "Inventory hostname: {{ inventory_hostname }}"
-          - "First control plane node: {{ groups['three_node_control_plane'][0] }}"
+          - "First control plane node: {{ groups['control_plane_nodes'][0] }}"
 
     - name: Verbose token generation
       ansible.builtin.debug:
@@ -126,3 +140,14 @@
     - 6443  # Kubernetes API
     - 2379  # etcd client
     - 2380  # etcd peer
+
+- name: Wait for token to be available
+  ansible.builtin.wait_for:
+    timeout: 30
+  when: rke2_token is defined
+
+- name: Verify token sharing
+  ansible.builtin.debug:
+    msg: "Token status for {{ item }}: {{ hostvars[item].rke2_token is defined }}"
+  with_items: "{{ groups['all'] }}"
+  run_once: true
