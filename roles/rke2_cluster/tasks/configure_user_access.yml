@@ -1,8 +1,10 @@
 ---
-- name: Check if .kube directory exists
-  ansible.builtin.stat:
-    path: /home/ubuntu/.kube
-  register: kube_dir
+- name: Wait for kubeconfig to be generated
+  wait_for:
+    path: /etc/rancher/rke2/rke2.yaml
+    state: present
+    timeout: 300
+  register: kubeconfig_file
 
 - name: Create .kube directory for ubuntu user
   ansible.builtin.file:
@@ -11,15 +13,16 @@
     owner: ubuntu
     group: ubuntu
     mode: '0755'
-  when: not kube_dir.stat.exists
 
-- name: Symlink kubeconfig for ubuntu user
-  ansible.builtin.file:
+- name: Copy kubeconfig to user directory
+  copy:
     src: /etc/rancher/rke2/rke2.yaml
     dest: /home/ubuntu/.kube/config
-    state: link
-    force: true
-  when: kube_dir.stat.exists
+    remote_src: yes
+    owner: ubuntu
+    group: ubuntu
+    mode: '0600'
+  when: kubeconfig_file.stat.exists
 
 - name: Create symlink for kubectl
   ansible.builtin.file:
@@ -34,32 +37,6 @@
     regexp: 'server: https://127.0.0.1:6443'
     replace: 'server: https://{{ first_server_ip }}:6443'
   when: inventory_hostname != groups['control_plane_nodes'][0]
-
-- name: Wait for kubeconfig to be generated
-  wait_for:
-    path: /etc/rancher/rke2/rke2.yaml
-    state: present
-    timeout: 300
-  when: inventory_hostname in groups['control_plane_nodes']
-
-- name: Copy kubeconfig to user directory
-  copy:
-    src: /etc/rancher/rke2/rke2.yaml
-    dest: "/home/ubuntu/.kube/config"
-    remote_src: yes
-    owner: ubuntu
-    group: ubuntu
-    mode: '0600'
-  when: inventory_hostname in groups['control_plane_nodes']
-
-- name: Ensure .kube directory exists on worker nodes
-  ansible.builtin.file:
-    path: "{{ paths.user.kube_dir }}"
-    state: directory
-    mode: '0700'
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-  when: inventory_hostname in groups['worker_nodes']
 
 - name: Copy kubeconfig from first control plane to workers
   ansible.builtin.copy:
