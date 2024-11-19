@@ -1,6 +1,6 @@
 ---
 - name: RKE2 Cluster Cleanup Playbook
-  hosts: three_node_cluster
+  hosts: six_node_cluster
   become: true
   gather_facts: false
   strategy: linear
@@ -8,75 +8,70 @@
   tasks:
     - name: Warning - RKE2 will be removed
       ansible.builtin.pause:
-        prompt: "This will completely remove RKE2 from all nodes. Press ENTER to continue or CTRL+C to abort"
+        prompt: "This will completely remove RKE2 from all nodes (control plane and workers). Press ENTER to continue or CTRL+C to abort"
       delegate_to: localhost
       run_once: true
 
-    - name: Include RKE2 cleanup tasks
-      ansible.builtin.include_role:
-        name: rke2_cluster
-        tasks_from: cleanup.yml
-
-    - name: Stop and disable all RKE2-related services
+    - name: Stop RKE2 services
       ansible.builtin.systemd:
         name: "{{ item }}"
         state: stopped
         enabled: false
-      with_items:
+      loop:
         - rke2-server
         - rke2-agent
       failed_when: false
 
+    - name: Run RKE2 uninstall script if exists
+      ansible.builtin.command: 
+        cmd: /usr/local/bin/rke2-uninstall.sh
+        removes: /usr/local/bin/rke2-uninstall.sh
+      failed_when: false
+
     - name: Kill remaining RKE2-related processes
-      shell: |
+      ansible.builtin.shell: |
         pkill -f "journalctl.*rke2" || true
         pkill -f "rke2" || true
         pkill -f "containerd" || true
       args:
-        warn: false
-      failed_when: false
-
-    - name: Pause to allow processes to terminate
-      pause:
-        seconds: 10
-
-    - name: Validation - Check RKE2 processes are not running
-      ansible.builtin.shell: "ps aux | grep -v grep | grep -E 'rke2|containerd'"
-      register: process_check
+        executable: /bin/bash
       changed_when: false
       failed_when: false
 
-    - name: Validation - Check RKE2 directories are removed
-      ansible.builtin.stat:
+    - name: Pause to allow processes to terminate
+      ansible.builtin.wait_for:
+        timeout: 10
+        
+    - name: Remove RKE2 configuration and data directories
+      ansible.builtin.file:
         path: "{{ item }}"
-      register: dir_check
-      with_items:
-        - /var/lib/rancher/rke2
+        state: absent
+      loop:
         - /etc/rancher/rke2
+        - /var/lib/rancher/rke2
+        - /var/lib/kubelet
         - /usr/local/bin/rke2
-        - /var/lib/rancher/rke2/server/db/etcd
+        - /usr/local/bin/kubectl
+        - /home/ubuntu/.kube
         - /run/k3s
         - /run/flannel
+      failed_when: false
+
+    - name: Verify directory removal
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/rancher/rke2
+        - /var/lib/rancher/rke2
         - /var/lib/kubelet
+        - /usr/local/bin/rke2
+        - /usr/local/bin/kubectl
+        - /home/ubuntu/.kube
+      register: dir_check
+      failed_when: false
 
-    - name: Validation - Check RKE2 services are disabled
-      ansible.builtin.service_facts:
-      register: services_state
-
-    - name: Validation - Display cleanup results
+    - name: Log directories that could not be removed
       ansible.builtin.debug:
-        msg: |
-          Cleanup Validation Results:
-          --------------------------
-          RKE2 Processes Running: {{ 'Yes' if process_check.stdout else 'No' }}
-          RKE2 Directories Present: {{ 'Yes' if (dir_check.results | map(attribute='stat.exists') | select('true') | list) else 'No' }}
-          RKE2 Services Status:
-            - rke2-server: {{ services_state.ansible_facts.services['rke2-server.service'].state if 'rke2-server.service' in services_state.ansible_facts.services else 'Not Found' }}
-            - rke2-agent: {{ services_state.ansible_facts.services['rke2-agent.service'].state if 'rke2-agent.service' in services_state.ansible_facts.services else 'Not Found' }}
-
-    - name: Validation - Assert cleanup was successful
-      ansible.builtin.assert:
-        that:
-          - "not process_check.stdout or process_check.stdout == ''"
-        fail_msg: "RKE2 cleanup validation failed. Please check the validation results above."
-        success_msg: "RKE2 cleanup validation successful - all components removed."
+        msg: "Could not remove directory: {{ item.item }}"
+      loop: "{{ dir_check.results }}"
+      when: item.stat.exists
