@@ -103,27 +103,42 @@
           - "Active Since: {{ service_status.status.ActiveEnterTimestamp }}"
   rescue:
     - name: Collect failure information
-      ansible.builtin.shell: |
-        echo "=== Service Status ===" > /var/log/rke2-init/failure.log
-        systemctl status rke2-server >> /var/log/rke2-init/failure.log
-        echo -e "\n=== Recent Logs ===" >> /var/log/rke2-init/failure.log
-        journalctl -u rke2-server -n 50 >> /var/log/rke2-init/failure.log
-      changed_when: false
+      shell: |
+        echo "=== Service Status ===" > /tmp/rke2-failure.log
+        systemctl status rke2-server >> /tmp/rke2-failure.log
+        echo -e "\n=== Recent Logs ===" >> /tmp/rke2-failure.log
+        journalctl -u rke2-server -n 50 >> /tmp/rke2-failure.log
+      when: rke2_init_failed | default(false)
+      ignore_errors: true
 
     - name: Display failure information
       ansible.builtin.debug:
-        msg: "{{ lookup('file', '/var/log/rke2-init/failure.log').split('\n') }}"
+        msg: "{{ lookup('file', '/tmp/rke2-failure.log').split('\n') }}"
 
     - name: Fail with error
       ansible.builtin.fail:
         msg: "RKE2 server failed to start properly. Check the logs for details."
 
+- name: Wait for RKE2 binaries to be installed
+  wait_for:
+    path: "/var/lib/rancher/rke2/bin/kubectl"
+    timeout: 300
+  register: kubectl_binary
+
+- name: Debug kubectl binary status
+  debug:
+    msg: 
+      - "Kubectl binary exists: {{ kubectl_binary.stat.exists | default(false) }}"
+      - "Wait time: {{ kubectl_binary.elapsed }}"
+      - "Path: /var/lib/rancher/rke2/bin/kubectl"
+
 - name: Create kubectl symlink
   ansible.builtin.file:
-    src: "{{ paths.rke2.data }}/bin/kubectl"
+    src: "/var/lib/rancher/rke2/bin/kubectl"
     dest: "/usr/local/bin/kubectl"
     state: link
     force: true
+  when: kubectl_binary.stat.exists | default(false)
 
 - name: Create .kube directory
   ansible.builtin.file:
