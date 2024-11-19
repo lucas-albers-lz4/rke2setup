@@ -25,7 +25,8 @@
     rke2_errors: []
 
 - name: Check existing journal for completed states
-  ansible.builtin.shell: |
+  shell: |
+    #!/bin/bash
     journalctl -u rke2-server --no-pager -n 1000 | while read -r line; do
       timestamp=$(echo "$line" | awk '{print $1" "$2" "$3}')
       {% for state, info in rke2_states.items() %}
@@ -38,6 +39,8 @@
       fi
       {% endfor %}
     done
+  args:
+    executable: /bin/bash
   register: existing_states
   changed_when: false
 
