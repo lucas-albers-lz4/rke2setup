@@ -49,6 +49,9 @@
     path: /etc/rancher/rke2
     state: directory
     mode: '0755'
+    owner: root
+    group: root
+  become: true
 
 - name: Configure first control plane node
   ansible.builtin.template:
@@ -75,23 +78,45 @@
       environment:
         INSTALL_RKE2_METHOD: tar
 
-- name: Enable and start RKE2 server
-  systemd:
-    name: rke2-server
-    state: started
-    enabled: yes
-  register: rke2_service_result
-  ignore_errors: yes
+- name: Manage RKE2 server service
+  block:
+    - name: Include monitoring tasks
+      ansible.builtin.include_tasks: monitor_rke2.yml
 
-- name: Get RKE2 server logs if service failed
-  command: journalctl -xeu rke2-server.service
-  register: rke2_logs
-  when: rke2_service_result.failed
+    - name: Start RKE2 server service if not running
+      systemd:
+        name: rke2-server
+        state: started
+        enabled: yes
+      when: not rke2_fully_running
+      register: rke2_service_result
 
-- name: Display RKE2 server logs
-  debug:
-    var: rke2_logs.stdout_lines
-  when: rke2_logs is defined
+    - name: Verify service status
+      ansible.builtin.systemd:
+        name: rke2-server
+      register: service_status
+
+    - name: Display service status
+      ansible.builtin.debug:
+        msg: 
+          - "Service Status: {{ service_status.status.SubState }}"
+          - "Active Since: {{ service_status.status.ActiveEnterTimestamp }}"
+  rescue:
+    - name: Collect failure information
+      ansible.builtin.shell: |
+        echo "=== Service Status ===" > /var/log/rke2-init/failure.log
+        systemctl status rke2-server >> /var/log/rke2-init/failure.log
+        echo -e "\n=== Recent Logs ===" >> /var/log/rke2-init/failure.log
+        journalctl -u rke2-server -n 50 >> /var/log/rke2-init/failure.log
+      changed_when: false
+
+    - name: Display failure information
+      ansible.builtin.debug:
+        msg: "{{ lookup('file', '/var/log/rke2-init/failure.log').split('\n') }}"
+
+    - name: Fail with error
+      ansible.builtin.fail:
+        msg: "RKE2 server failed to start properly. Check the logs for details."
 
 - name: Create kubectl symlink
   ansible.builtin.file:
