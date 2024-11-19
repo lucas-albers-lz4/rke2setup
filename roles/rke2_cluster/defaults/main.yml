@@ -2,7 +2,7 @@
 # RKE2 Cluster Default Variables
 
 # Cluster Configuration
-cluster_type: three_node
+cluster_type: "six_node"
 first_server_ip: ""
 
 # Installation Paths
