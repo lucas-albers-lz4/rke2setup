@@ -31,9 +31,12 @@
 
 # Share token with other hosts
 - name: Share token with other hosts
-  ansible.builtin.set_fact:
-    rke2_token: "{{ hostvars[groups['three_node_control_plane'].0]['rke2_token'] }}"
-  when: inventory_hostname != groups['three_node_control_plane'].0
+  set_fact:
+    rke2_token: "{{ hostvars[groups['three_node_control_plane'][0]].rke2_token }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  with_items: "{{ groups['three_node_control_plane'][1:] }}"
+  when: inventory_hostname == groups['three_node_control_plane'][0]
 
 - name: Create RKE2 config directory
   ansible.builtin.file:
@@ -99,3 +102,27 @@
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: '0600'
+
+- name: Debug token generation process
+  block:
+    - name: Show existing configuration status
+      ansible.builtin.debug:
+        msg: 
+          - "RKE2 config exists: {{ rke2_config.stat.exists }}"
+          - "Inventory hostname: {{ inventory_hostname }}"
+          - "First control plane node: {{ groups['three_node_control_plane'][0] }}"
+
+    - name: Verbose token generation
+      ansible.builtin.debug:
+        msg: "Generating or retrieving token for {{ inventory_hostname }}"
+
+# Add firewall rules if needed
+- name: Configure required ports
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  with_items:
+    - 6443  # Kubernetes API
+    - 2379  # etcd client
+    - 2380  # etcd peer
