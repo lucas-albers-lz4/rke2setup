@@ -14,6 +14,25 @@ WARNING_HEADER = """############################################################
 
 """
 
+def validate_ip(hostname: str, ip: str) -> bool:
+    """Validate IP address format."""
+    parts = ip.split('.')
+    if len(parts) != 4:
+        raise ValueError(f"Invalid IP address format for {hostname}: {ip} - must have 4 octets")
+    
+    try:
+        # Validate each octet
+        for part in parts:
+            num = int(part)
+            if not (0 <= num <= 255):
+                raise ValueError(f"Invalid IP address for {hostname}: {ip} - each octet must be between 0 and 255")
+    except ValueError as e:
+        if str(e).startswith("Invalid IP address"):
+            raise
+        raise ValueError(f"Invalid IP address for {hostname}: {ip} - octets must be numeric")
+    
+    return True
+
 def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     """Parse hosts.txt file to extract control plane and worker node info as (hostname, ip) tuples."""
     control_plane_nodes = []
@@ -22,8 +41,10 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     with open(hosts_file, 'r') as f:
         lines = f.readlines()
         in_six_node = False
+        line_number = 0
         
         for line in lines:
+            line_number += 1
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
@@ -35,15 +56,27 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
             if in_six_node and line:
                 # Parse hostname and IP
                 parts = line.split()
-                if len(parts) >= 2:
-                    hostname = parts[0]
-                    ip = parts[1]
-                    
-                    # First 3 nodes are control plane, next 3 are workers
-                    if len(control_plane_nodes) < 3:
-                        control_plane_nodes.append((hostname, ip))
-                    else:
-                        worker_nodes.append((hostname, ip))
+                if len(parts) < 2:
+                    raise ValueError(f"Line {line_number}: Missing IP address for host {line}")
+                
+                hostname = parts[0]
+                # Join remaining parts and remove any spaces
+                ip = ''.join(parts[1:]).strip()
+                
+                # Validate IP format - will raise ValueError if invalid
+                validate_ip(hostname, ip)
+                
+                # First 3 nodes are control plane, next 3 are workers
+                if len(control_plane_nodes) < 3:
+                    control_plane_nodes.append((hostname, ip))
+                else:
+                    worker_nodes.append((hostname, ip))
+    
+    # Verify we have enough nodes
+    if len(control_plane_nodes) != 3:
+        raise ValueError(f"Expected 3 control plane nodes, found {len(control_plane_nodes)}")
+    if len(worker_nodes) != 3:
+        raise ValueError(f"Expected 3 worker nodes, found {len(worker_nodes)}")
     
     return control_plane_nodes, worker_nodes
 
@@ -92,12 +125,15 @@ def main():
     
     args = parser.parse_args()
     
-    control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
-    inventory = generate_inventory(control_plane_nodes, worker_nodes)
-    
-    with open(args.output, 'w') as f:
-        f.write(WARNING_HEADER)
-        yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2)
+    try:
+        control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
+        inventory = generate_inventory(control_plane_nodes, worker_nodes)
+        
+        with open(args.output, 'w') as f:
+            f.write(WARNING_HEADER)
+            yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2)
+    except ValueError as e:
+        print(f"Error: {e}")
 
 if __name__ == '__main__':
     main()
