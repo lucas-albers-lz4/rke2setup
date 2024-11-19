@@ -102,3 +102,23 @@
     - { key: 'net.ipv4.ip_forward', value: '1' }
     - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
     - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+
+- name: Ensure UFW is stopped and disabled
+  block:
+    - name: Stop UFW service
+      ansible.builtin.systemd:
+        name: ufw
+        state: stopped
+        enabled: false
+      register: ufw_stop
+
+    - name: Verify UFW is disabled
+      ansible.builtin.command: ufw status
+      register: ufw_status
+      changed_when: false
+      failed_when: "'Status: active' in ufw_status.stdout"
+
+    - name: Debug UFW status
+      ansible.builtin.debug:
+        msg: "UFW Status: {{ ufw_status.stdout }}"
+  become: true
