@@ -20,3 +20,8 @@
     - name: Display service logs
       ansible.builtin.debug:
         var: rke2_logs.stdout_lines
+
+- name: Check service initialization
+  shell: |
+    echo -e "\n=== Service Initialization Details ===" >> /tmp/rke2-diagnostics.log
+    systemctl show rke2-server --property=StatusText,LoadState,ActiveState >> /tmp/rke2-diagnostics.log

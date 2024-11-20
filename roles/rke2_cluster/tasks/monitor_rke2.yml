@@ -117,32 +117,32 @@
 
     - name: Display initialization progress
       ansible.builtin.shell: |
-        if [ ! -f /var/log/rke2-init/progress ]; then
-          echo "Progress file not found"
+        # Check RKE2 service status
+        if ! systemctl is-active rke2-server.service >/dev/null 2>&1; then
+          echo "[IN PROGRESS] RKE2 service not yet active"
           exit 1
         fi
-        
-        # Display current progress
-        cat /var/log/rke2-init/progress
-        
-        # Check for completion or error
-        if grep -q "\[COMPLETE\] RKE2 is fully operational" /var/log/rke2-init/progress; then
+
+        # Check for required components in journal
+        if journalctl -u rke2-server --no-pager -n 100 | grep -q "etcd data store connection OK" && \
+           journalctl -u rke2-server --no-pager -n 100 | grep -q "Kube API server is now running" && \
+           journalctl -u rke2-server --no-pager -n 100 | grep -q "Starting managed etcd node metadata controller" && \
+           journalctl -u rke2-server --no-pager -n 100 | grep -q "rke2 is up and running"; then
+          echo "[COMPLETE] RKE2 is fully operational"
           exit 0
-        elif grep -q "\[ERROR\]" /var/log/rke2-init/progress; then
-          exit 2
-        else
-          # Still in progress
-          exit 1
         fi
+
+        echo "[IN PROGRESS] Waiting for all components to initialize"
+        exit 1
       register: init_progress
-      until: init_progress.rc == 0 or init_progress.rc == 2
+      until: init_progress.rc == 0
       retries: "{{ (rke2_monitor_timeout | default(600)) // (rke2_monitor_interval | default(10)) }}"
       delay: "{{ rke2_monitor_interval | default(10) }}"
-      failed_when: init_progress.rc == 2
+      changed_when: false
 
-    - name: Show detailed progress
+    - name: Show initialization status
       ansible.builtin.debug:
-        msg: "{{ lookup('file', '/var/log/rke2-init/progress').split('\n') }}"
+        msg: "{{ init_progress.stdout }}"
       when: init_progress.rc != 0
 
     - name: Check for initialization errors

@@ -126,3 +126,12 @@
       - "First control plane: {{ groups['control_plane_nodes'][0] }}"
       - "Token from first CP: {{ hostvars[groups['control_plane_nodes'][0]].rke2_token | default('UNDEFINED') }}"
   when: inventory_hostname != groups['control_plane_nodes'][0]
+
+- name: Check node registration
+  shell: |
+    echo -e "\n=== Node Registration Status ===" >> /tmp/rke2-diagnostics.log
+    if [ -f "{{ paths.rke2.kubeconfig }}" ]; then
+      {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} -o yaml \
+        --kubeconfig={{ paths.rke2.kubeconfig }} >> /tmp/rke2-diagnostics.log
+    fi
+  ignore_errors: true
