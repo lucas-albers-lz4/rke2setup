@@ -2,10 +2,10 @@
 galaxy_info:
   role_name: rke2_cluster
   namespace: local
-  author: Your Name
-  description: RKE2 Kubernetes Cluster Deployment
+  author: Lucas Albers
+  description: Production-like RKE2 Kubernetes Cluster Deployment for learning and development
   license: MIT
-  min_ansible_version: 2.9.0
+  min_ansible_version: 8.7.0
 
   platforms:
     - name: Ubuntu
@@ -17,5 +17,7 @@ galaxy_info:
     - kubernetes
     - rke2
     - cluster
+    - ha
+    - development
 
 dependencies: []

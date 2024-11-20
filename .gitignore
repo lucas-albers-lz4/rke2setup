@@ -18,3 +18,11 @@ venv/
 .DS_Store
 Thumbs.db
 inventory/hosts.txt
+
+# Text files
+* text=auto eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.j2 text eol=lf
+*.sh text eol=lf
+*.md text eol=lf

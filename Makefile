@@ -1,4 +1,4 @@
-.PHONY: lint clean generate-inventory six-node-cluster
+.PHONY: lint clean generate-inventory deploy
 
 lint:
 	ansible-lint --profile production
@@ -9,5 +9,5 @@ clean:
 generate-inventory:
 	./scripts/generate_inventory.py inventory/hosts.txt
 
-six-node-cluster: generate-inventory
-	ansible-playbook -i inventory/rke2.yml six-node-cluster.yml
+deploy: generate-inventory
+	ansible-playbook -i inventory/rke2.yml verify_hosts.yml rke2.yml
