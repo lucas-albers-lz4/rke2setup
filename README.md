@@ -215,3 +215,14 @@ Lucas Albers
 To deploy a cluster, use one of the following commands based on your desired cluster size:
 
 ### Three Node Cluster
+
+```
+
+## Setup
+
+1. Clone the repository
+2. Copy the example inventory file:
+   ```bash
+   cp inventory/hosts.txt.example inventory/hosts.txt
+   ```
+3. Edit `inventory/hosts.txt` with your node information
