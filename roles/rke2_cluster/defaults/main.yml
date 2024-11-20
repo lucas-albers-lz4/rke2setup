@@ -93,3 +93,19 @@ rke2_ports:
   api: 6443
   etcd_client: 2379
   etcd_peer: 2380
+
+# Add these state definitions
+rke2_states:
+  STARTING:
+    pattern: "Starting rke2-server"
+    completed: false
+  INIT:
+    pattern: "Cluster-init mode enabled"
+    completed: false
+  RUNNING:
+    pattern: "Running kube-apiserver"
+    completed: false
+
+# Add these monitoring settings
+rke2_monitor_timeout: 600  # 10 minutes
+rke2_monitor_interval: 10  # 10 seconds

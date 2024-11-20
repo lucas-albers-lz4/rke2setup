@@ -39,8 +39,7 @@
 
 - name: Install RKE2 server
   shell: |
-    set -o pipefail
-    INSTALL_RKE2_TYPE=server sh /tmp/rke2-install.sh
+    INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
   register: install_result
 
 - name: Verify RKE2 installation

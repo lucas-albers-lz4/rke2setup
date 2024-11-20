@@ -65,12 +65,12 @@
     }}"
 
 - name: Display current RKE2 state
-  ansible.builtin.debug:
-    msg: 
-      - "Current RKE2 State:"
-      - "{% for state, info in rke2_states.items() %}"
-      - "  {{ state }}: {{ 'COMPLETED' if info.completed else 'PENDING' }} {{ info.timestamp if info.timestamp else '' }}"
-      - "{% endfor %}"
+  debug:
+    msg: |
+      Current RKE2 States:
+      {% for state, info in rke2_states.items() %}
+      {{ state }}: {{ info }}
+      {% endfor %}
 
 - name: Start live monitoring if not fully running
   when: not rke2_fully_running
@@ -85,23 +85,25 @@
       ansible.builtin.shell: |
         echo "Starting RKE2 monitoring at $(date)" > /var/log/rke2-init/progress
         {% for state, info in rke2_states.items() %}
-        {% if not info.completed %}
         echo "Waiting for {{ state }}..." >> /var/log/rke2-init/progress
-        {% endif %}
         {% endfor %}
 
         journalctl -u rke2-server -f -n 0 | while read -r line; do
           timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+          
           {% for state, info in rke2_states.items() %}
-          {% if not info.completed %}
           if [[ $line =~ "{{ info.pattern }}" ]]; then
             echo "[$timestamp] [{{ state }}] Completed" >> /var/log/rke2-init/progress
+            if [[ "{{ state }}" == "RUNNING" ]]; then
+              echo "[$timestamp] [COMPLETE] RKE2 is fully operational" >> /var/log/rke2-init/progress
+              exit 0
+            fi
           fi
-          {% endif %}
           {% endfor %}
           
           if [[ $line =~ "level=fatal" ]] || [[ $line =~ "Failed to start" ]]; then
             echo "[$timestamp] [ERROR] $line" >> /var/log/rke2-init/progress
+            exit 1
           fi
         done &
       async: "{{ rke2_monitor_timeout | default(600) }}"
@@ -109,10 +111,24 @@
       register: monitor_job
 
     - name: Display initialization progress
-      ansible.builtin.shell: cat /var/log/rke2-init/progress
+      ansible.builtin.shell: |
+        if [ ! -f /var/log/rke2-init/progress ]; then
+          echo "Progress file not found"
+          exit 1
+        fi
+        cat /var/log/rke2-init/progress
+        grep -q "\[COMPLETE\] RKE2 is fully operational\|\[ERROR\]" /var/log/rke2-init/progress
       register: init_progress
-      until: >-
-        '[COMPLETE] RKE2 is fully operational' in init_progress.stdout or 
-        '[ERROR]' in init_progress.stdout
+      until: init_progress.rc == 0
       retries: "{{ (rke2_monitor_timeout | default(600)) // (rke2_monitor_interval | default(10)) }}"
       delay: "{{ rke2_monitor_interval | default(10) }}"
+
+    - name: Show detailed progress
+      ansible.builtin.debug:
+        msg: "{{ lookup('file', '/var/log/rke2-init/progress').split('\n') }}"
+      when: init_progress.rc != 0 or init_progress.stdout is search("[ERROR]")
+
+    - name: Check for initialization errors
+      ansible.builtin.fail:
+        msg: "RKE2 initialization failed. Check /var/log/rke2-init/progress for details."
+      when: init_progress.stdout is search("[ERROR]")

@@ -61,3 +61,9 @@
       until: healthz_check.content == "ok"
       retries: 30
       delay: 10
+
+- name: Wait for RKE2 binaries to be installed
+  wait_for:
+    path: /var/lib/rancher/rke2/bin/kubectl
+    timeout: 300
+  register: kubectl_binary

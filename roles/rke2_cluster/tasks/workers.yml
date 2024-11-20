@@ -29,10 +29,15 @@
           - "First control plane: {{ groups['control_plane_nodes'][0] }}"
           - "Token from CP: {{ hostvars[groups['control_plane_nodes'][0]].rke2_token | default('UNDEFINED') }}"
       when: not hostvars[groups['control_plane_nodes'][0]].rke2_token is defined
-  rescue:
-    - name: Debug token information
-      ansible.builtin.debug:
-        msg: 
-          - "Inventory Hostname: {{ inventory_hostname }}"
-          - "Defined Variables: {{ hostvars[inventory_hostname] }}"
-      failed_when: true
+
+- name: Download RKE2 installation script
+  get_url:
+    url: https://get.rke2.io
+    dest: /tmp/rke2-install.sh
+    mode: '0755'
+  register: download_result
+
+- name: Install RKE2 agent
+  shell: |
+    INSTALL_RKE2_TYPE=agent bash /tmp/rke2-install.sh
+  when: download_result is success
