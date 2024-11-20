@@ -1,0 +1,29 @@
+- name: Verify RKE2 installation result
+  block:
+    - name: Check installation script result
+      assert:
+        that:
+          - install_result.rc == 0
+          - "'unpacking tarball file to /usr/local' in install_result.stdout"
+        fail_msg: |
+          RKE2 installation failed:
+          RC: {{ install_result.rc }}
+          stdout: {{ install_result.stdout }}
+          stderr: {{ install_result.stderr }}
+        success_msg: "RKE2 installation script completed successfully"
+      when: install_result is defined
+
+    - name: Check essential RKE2 files
+      stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/bin/rke2
+        - /var/lib/rancher/rke2/bin/kubectl
+        - /etc/rancher/rke2
+      register: rke2_files
+
+    - name: Verify all required files exist
+      assert:
+        that: "{{ rke2_files.results | json_query('[*].stat.exists') | all }}"
+        fail_msg: "Missing required RKE2 files: {{ rke2_files.results | json_query('[?!stat.exists].item') }}"
+        success_msg: "All required RKE2 files are present"
