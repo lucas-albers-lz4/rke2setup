@@ -116,12 +116,24 @@
           echo "Progress file not found"
           exit 1
         fi
+        
+        # Display current progress
         cat /var/log/rke2-init/progress
-        grep -q "\[COMPLETE\] RKE2 is fully operational\|\[ERROR\]" /var/log/rke2-init/progress
+        
+        # Check for completion or error
+        if grep -q "\[COMPLETE\] RKE2 is fully operational" /var/log/rke2-init/progress; then
+          exit 0
+        elif grep -q "\[ERROR\]" /var/log/rke2-init/progress; then
+          exit 2
+        else
+          # Still in progress
+          exit 1
+        fi
       register: init_progress
-      until: init_progress.rc == 0
+      until: init_progress.rc == 0 or init_progress.rc == 2
       retries: "{{ (rke2_monitor_timeout | default(600)) // (rke2_monitor_interval | default(10)) }}"
       delay: "{{ rke2_monitor_interval | default(10) }}"
+      failed_when: init_progress.rc == 2
 
     - name: Show detailed progress
       ansible.builtin.debug:
@@ -132,3 +144,11 @@
       ansible.builtin.fail:
         msg: "RKE2 initialization failed. Check /var/log/rke2-init/progress for details."
       when: init_progress.stdout is search("[ERROR]")
+
+    - name: Debug monitoring status
+      ansible.builtin.debug:
+        msg:
+          - "Return code: {{ init_progress.rc }}"
+          - "Stdout: {{ init_progress.stdout_lines }}"
+          - "Stderr: {{ init_progress.stderr_lines }}"
+      when: init_progress.rc != 0

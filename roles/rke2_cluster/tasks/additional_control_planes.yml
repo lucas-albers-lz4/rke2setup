@@ -43,7 +43,10 @@
   register: install_result
 
 - name: Verify RKE2 installation
-  include_tasks: verify_rke2_install.yml
+  include_tasks: verify_installation.yml
+
+- name: Check RKE2 service status
+  include_tasks: verify_rke2_service.yml
 
 - name: Wait for first control plane readiness
   ansible.builtin.include_tasks: wait_for_server.yml
