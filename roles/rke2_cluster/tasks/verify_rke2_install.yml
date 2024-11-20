@@ -1,9 +1,0 @@
----
-- name: Check RKE2 service status
-  command: systemctl status rke2-server
-  register: rke2_status
-  ignore_errors: true
-
-- name: Display RKE2 status
-  debug:
-    var: rke2_status.stdout_lines
