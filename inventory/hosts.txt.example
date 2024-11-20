@@ -1,0 +1,19 @@
+# Six Node Cluster
+[six_node]
+k7 192.168.1.48
+k8 192.168.1.49
+k9 192.168.1.50
+node7 192.168.1.55
+node8 192.168.1.54
+node9 192.168.1.52
+
+[control_plane_nodes]
+k7
+k8
+k9
+
+[worker_nodes]
+node7
+node8
+node9
+
