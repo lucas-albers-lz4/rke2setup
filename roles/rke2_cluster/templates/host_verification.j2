@@ -1,0 +1,31 @@
+# Host Verification Report for {{ verification_data.hostname }}
+Generated: {{ ansible_date_time.iso8601 }}
+
+## System Information
+Hostname: {{ verification_data.hostname }}
+Inventory Hostname: {{ verification_data.inventory_hostname }}
+Expected IP (ansible_host): {{ verification_data.ansible_host }}
+
+## Network Configuration
+All IPs: {{ verification_data.all_ips | join(', ') }}
+DNS Resolution: {{ verification_data.dns_resolution }}
+IP Conflicts: {{ verification_data.ip_conflict }}
+
+## Verification Status
+{% if verification_data.ansible_host in verification_data.all_ips %}
+✓ IP Address Match: PASS
+{% else %}
+✗ IP Address Match: FAIL
+{% endif %}
+
+{% if verification_data.ip_conflict == 'None' %}
+✓ IP Conflict Check: PASS
+{% else %}
+✗ IP Conflict Check: FAIL
+{% endif %}
+
+{% if verification_data.dns_resolution != 'Failed' %}
+✓ DNS Resolution: PASS
+{% else %}
+✗ DNS Resolution: FAIL
+{% endif %}
