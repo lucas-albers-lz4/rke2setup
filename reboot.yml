@@ -1,0 +1,11 @@
+---
+- name: RKE2 Cluster reboot Playbook
+  hosts: six_node_cluster
+  become: true
+  gather_facts: false
+  strategy: linear
+
+  tasks:
+    - include_tasks: roles/rke2_cluster/tasks/reboot.yml
+
+
