@@ -8,7 +8,7 @@ write-kubeconfig-mode: "0644"
 cluster-init: true
 {% elif inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes'] %}
 # Additional nodes connect to first control plane
-server: https://{{ hostvars[groups['control_planes'][0]]['ansible_host'] }}:9345
+server: https://{{ hostvars[groups['control_plane_nodes'][0]]['ansible_host'] }}:9345
 {% endif %}
 
 # TLS SANs for all control plane nodes
