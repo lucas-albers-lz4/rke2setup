@@ -1,9 +1,0 @@
-# Three Node Cluster
-[three_node]
-K7 192.168.1.48
-K8 192.168.1.49
-K9 192.168.1.50
-
-# Six Node Cluster
-[six_node]
-# Leave empty for now or comment out since you don't have 6 nodes yet

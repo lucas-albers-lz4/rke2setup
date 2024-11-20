@@ -17,5 +17,4 @@ venv/
 # OS specific
 .DS_Store
 Thumbs.db
-inventory/hosts.txt
 rke2setup.code-workspace
