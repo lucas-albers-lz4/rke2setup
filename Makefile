@@ -1,4 +1,4 @@
-.PHONY: lint clean generate-inventory
+.PHONY: lint clean generate-inventory six-node-cluster
 
 lint:
 	ansible-lint --profile production
@@ -7,10 +7,7 @@ clean:
 	ansible-playbook cleanup.yml
 
 generate-inventory:
-	./scripts/generate_inventory.py \
-		--control-plane-ips 192.168.1.48 \
-		--worker-ips 192.168.1.49 192.168.1.50 \
-		--output inventory/rke2.yml
+	./scripts/generate_inventory.py inventory/hosts.txt
 
-setup: generate-inventory
-	ansible-playbook bootstrap-cluster.yml
+six-node-cluster: generate-inventory
+	ansible-playbook -i inventory/rke2.yml six-node-cluster.yml

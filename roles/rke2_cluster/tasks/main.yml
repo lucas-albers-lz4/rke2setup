@@ -1,34 +1,65 @@
 ---
 - name: Setup first control plane node
   ansible.builtin.include_tasks: first_control_plane.yml
-  when: inventory_hostname == groups['three_node_control_plane'].0
+  when: inventory_hostname == groups['control_plane_nodes'][0]
 
 - name: Setup additional control plane nodes
   ansible.builtin.include_tasks: additional_control_planes.yml
   when:
-    - inventory_hostname != groups['three_node_control_plane'].0
-    - inventory_hostname in groups['three_node_cluster']
+    - inventory_hostname != groups['control_plane_nodes'][0]
+    - inventory_hostname in groups['control_plane_nodes']
 
 - name: Setup worker nodes
   ansible.builtin.include_tasks: workers.yml
   when:
-    - inventory_hostname in groups['three_node_worker']
+    - inventory_hostname in groups['worker_nodes']
 
 - name: Verify cluster status
   ansible.builtin.include_tasks: verify_cluster.yml
-  when: inventory_hostname == groups['three_node_control_plane'].0
+  when: inventory_hostname == groups['control_plane_nodes'][0]
 
 - name: Configure user access
   ansible.builtin.include_tasks: configure_user_access.yml
 
 - name: Install cluster add-ons
   ansible.builtin.include_tasks: addons.yml
-  when: inventory_hostname == groups['three_node_control_plane'].0
+  when: inventory_hostname == groups['control_plane_nodes'][0]
 
 - name: Validate control plane
   ansible.builtin.include_tasks: validate_control_plane.yml
-  when: inventory_hostname == groups['three_node_control_plane'][0]
+  when: inventory_hostname == groups['control_plane_nodes'][0]
 
 - name: Configure workloads
   ansible.builtin.include_tasks: configure_workloads.yml
-  when: inventory_hostname in groups['three_node_control_plane']
+  when: inventory_hostname in groups['control_plane_nodes']
+
+- name: Check system requirements
+  block:
+    - name: Check available memory
+      assert:
+        that: ansible_memtotal_mb >= 2048
+        msg: "Minimum 2GB of RAM required"
+
+    - name: Check available disk space
+      shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
+      register: available_space
+      changed_when: false
+
+    - name: Verify disk space
+      assert:
+        that: available_space.stdout | int >= 20
+        msg: "Minimum 20GB of disk space required"
+
+    - name: Ensure required ports are available
+      wait_for:
+        port: "{{ item }}"
+        state: stopped
+        timeout: 5
+      loop:
+        - 6443  # Kubernetes API
+        - 9345  # RKE2 API
+
+- name: Share token with all hosts
+  set_fact:
+    rke2_token: "{{ hostvars[groups['control_plane_nodes'][0]].rke2_token }}"
+  when: inventory_hostname != groups['control_plane_nodes'][0]

@@ -14,6 +14,25 @@ WARNING_HEADER = """############################################################
 
 """
 
+def validate_ip(hostname: str, ip: str) -> bool:
+    """Validate IP address format."""
+    parts = ip.split('.')
+    if len(parts) != 4:
+        raise ValueError(f"Invalid IP address format for {hostname}: {ip} - must have 4 octets")
+    
+    try:
+        # Validate each octet
+        for part in parts:
+            num = int(part)
+            if not (0 <= num <= 255):
+                raise ValueError(f"Invalid IP address for {hostname}: {ip} - each octet must be between 0 and 255")
+    except ValueError as e:
+        if str(e).startswith("Invalid IP address"):
+            raise
+        raise ValueError(f"Invalid IP address for {hostname}: {ip} - octets must be numeric")
+    
+    return True
+
 def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     """Parse hosts.txt file to extract control plane and worker node info as (hostname, ip) tuples."""
     control_plane_nodes = []
@@ -21,27 +40,44 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     
     with open(hosts_file, 'r') as f:
         lines = f.readlines()
-        in_three_node = False
+        in_six_node = False
+        line_number = 0
         
         for line in lines:
+            line_number += 1
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
                 
-            if '[three_node]' in line:
-                in_three_node = True
+            # Check for section headers
+            if line.startswith('['):
+                in_six_node = (line == '[six_node]')
                 continue
                 
-            if in_three_node and line:
+            if in_six_node:
                 # Parse hostname and IP
                 parts = line.split()
-                if len(parts) >= 2:
-                    hostname = parts[0]
-                    ip = parts[1]
-                    if not control_plane_nodes:
-                        control_plane_nodes.append((hostname, ip))
-                    else:
-                        worker_nodes.append((hostname, ip))
+                if len(parts) < 2:
+                    continue  # Skip lines without IP addresses (like group headers)
+                
+                hostname = parts[0]
+                # Join remaining parts and remove any spaces
+                ip = ''.join(parts[1:]).strip()
+                
+                # Validate IP format - will raise ValueError if invalid
+                validate_ip(hostname, ip)
+                
+                # First 3 nodes are control plane, next 3 are workers
+                if len(control_plane_nodes) < 3:
+                    control_plane_nodes.append((hostname, ip))
+                else:
+                    worker_nodes.append((hostname, ip))
+    
+    # Verify we have enough nodes
+    if len(control_plane_nodes) != 3:
+        raise ValueError(f"Expected 3 control plane nodes, found {len(control_plane_nodes)}")
+    if len(worker_nodes) != 3:
+        raise ValueError(f"Expected 3 worker nodes, found {len(worker_nodes)}")
     
     return control_plane_nodes, worker_nodes
 
@@ -50,12 +86,12 @@ def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tupl
     inventory = {
         'all': {
             'children': {
-                'three_node_cluster': {
+                'six_node_cluster': {
                     'children': {
-                        'three_node_control_plane': {
+                        'control_plane_nodes': {
                             'hosts': {}
                         },
-                        'three_node_worker': {
+                        'worker_nodes': {
                             'hosts': {}
                         }
                     }
@@ -69,19 +105,46 @@ def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tupl
         }
     }
 
-    # Add control plane node
+    # Add control plane nodes
     for hostname, ip in control_plane_nodes:
-        inventory['all']['children']['three_node_cluster']['children']['three_node_control_plane']['hosts'][hostname] = {
+        inventory['all']['children']['six_node_cluster']['children']['control_plane_nodes']['hosts'][hostname] = {
             'ansible_host': ip
         }
 
     # Add worker nodes
     for hostname, ip in worker_nodes:
-        inventory['all']['children']['three_node_cluster']['children']['three_node_worker']['hosts'][hostname] = {
+        inventory['all']['children']['six_node_cluster']['children']['worker_nodes']['hosts'][hostname] = {
             'ansible_host': ip
         }
 
     return inventory
+
+def generate_tls_sans(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> List[str]:
+    """Generate TLS SANs from node information."""
+    tls_sans = set([
+        # Kubernetes system names
+        "kubernetes",
+        "kubernetes.default",
+        "kubernetes.default.svc",
+        "kubernetes.default.svc.cluster.local",
+        # Local access
+        "localhost",
+        "127.0.0.1"
+    ])
+    
+    # Add control plane nodes
+    for hostname, ip in control_plane_nodes:
+        tls_sans.add(hostname)
+        tls_sans.add(f"{hostname}.home.arpa")
+        tls_sans.add(ip)
+    
+    # Add worker nodes
+    for hostname, ip in worker_nodes:
+        tls_sans.add(hostname)
+        tls_sans.add(f"{hostname}.home.arpa")
+        tls_sans.add(ip)
+    
+    return sorted(list(tls_sans))
 
 def main():
     parser = argparse.ArgumentParser(description='Generate RKE2 cluster inventory')
@@ -90,12 +153,25 @@ def main():
     
     args = parser.parse_args()
     
-    control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
-    inventory = generate_inventory(control_plane_nodes, worker_nodes)
-    
-    with open(args.output, 'w') as f:
-        f.write(WARNING_HEADER)
-        yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2)
+    try:
+        control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
+        inventory = generate_inventory(control_plane_nodes, worker_nodes)
+        
+        # Generate TLS SANs and add to inventory vars
+        tls_sans = generate_tls_sans(control_plane_nodes, worker_nodes)
+        inventory['all']['vars']['tls_sans'] = tls_sans
+        
+        # Ensure inventory directory exists
+        output_path = Path(args.output)
+        output_path.parent.mkdir(exist_ok=True)
+        
+        with open(output_path, 'w') as f:
+            f.write(WARNING_HEADER)
+            yaml.dump(inventory, f, default_flow_style=False, sort_keys=False, indent=2)
+            
+        print(f"Generated inventory with TLS SANs at {args.output}")
+    except ValueError as e:
+        print(f"Error: {e}")
 
 if __name__ == '__main__':
     main()

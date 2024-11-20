@@ -2,7 +2,7 @@
 # RKE2 Cluster Default Variables
 
 # Cluster Configuration
-cluster_type: three_node
+cluster_type: "six_node"
 first_server_ip: ""
 
 # Installation Paths
@@ -79,3 +79,33 @@ default_config:
 # Feature flags
 enable_monitoring: true
 enable_ingress: true
+
+# Add these timeout and retry settings
+rke2_wait_settings:
+  timeout: 300
+  retries: 30
+  delay: 10
+  connect_timeout: 5
+
+# Add these port definitions
+rke2_ports:
+  supervisor: 9345
+  api: 6443
+  etcd_client: 2379
+  etcd_peer: 2380
+
+# Add these state definitions
+rke2_states:
+  STARTING:
+    pattern: "Starting rke2-server"
+    completed: false
+  INIT:
+    pattern: "Cluster-init mode enabled"
+    completed: false
+  RUNNING:
+    pattern: "Running kube-apiserver"
+    completed: false
+
+# Add these monitoring settings
+rke2_monitor_timeout: 600  # 10 minutes
+rke2_monitor_interval: 10  # 10 seconds

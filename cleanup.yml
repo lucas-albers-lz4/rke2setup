@@ -1,6 +1,6 @@
 ---
 - name: RKE2 Cluster Cleanup Playbook
-  hosts: three_node_cluster
+  hosts: six_node_cluster
   become: true
   gather_facts: false
   strategy: linear
@@ -12,71 +12,133 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Include RKE2 cleanup tasks
-      ansible.builtin.include_role:
-        name: rke2_cluster
-        tasks_from: cleanup.yml
-
-    - name: Stop and disable all RKE2-related services
+    - name: Stop RKE2 services
       ansible.builtin.systemd:
         name: "{{ item }}"
         state: stopped
         enabled: false
-      with_items:
+      loop:
         - rke2-server
         - rke2-agent
       failed_when: false
 
-    - name: Kill remaining RKE2-related processes
-      shell: |
-        pkill -f "journalctl.*rke2" || true
-        pkill -f "rke2" || true
-        pkill -f "containerd" || true
-      args:
-        warn: false
+    - name: Remove systemd service files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/rke2-server.service
+        - /etc/systemd/system/rke2-agent.service
+        - /etc/systemd/system/rke2-server.service.env
+        - /etc/systemd/system/rke2-agent.service.env
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Clean containerd state
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/rancher/rke2/agent/containerd/
+        - /var/lib/rancher/rke2/agent/containerd/db/meta.db
+        - /run/containerd
+        - /run/k3s/containerd
+
+    - name: Run RKE2 uninstall script if exists
+      ansible.builtin.command: 
+        cmd: /usr/local/bin/rke2-uninstall.sh
+        removes: /usr/local/bin/rke2-uninstall.sh
       failed_when: false
 
-    - name: Pause to allow processes to terminate
-      pause:
-        seconds: 10
-
-    - name: Validation - Check RKE2 processes are not running
-      ansible.builtin.shell: "ps aux | grep -v grep | grep -E 'rke2|containerd'"
-      register: process_check
+    - name: Kill remaining RKE2-related processes
+      ansible.builtin.shell: |
+        for pid in $(ps -ef | grep -E "rke2|containerd" | grep -v grep | awk '{print $2}'); do
+          kill -9 $pid || true
+        done
+        pkill -9 -f "rke2" || true
+        pkill -9 -f "containerd" || true
+        pkill -9 -f "kubelet" || true
+        pkill -f "journalctl.*rke2" || true
+      args:
+        executable: /bin/bash
       changed_when: false
       failed_when: false
 
-    - name: Validation - Check RKE2 directories are removed
-      ansible.builtin.stat:
+    - name: Pause to allow processes to terminate
+      ansible.builtin.wait_for:
+        timeout: 10
+        
+    - name: Remove RKE2 configuration and data directories
+      ansible.builtin.file:
         path: "{{ item }}"
-      register: dir_check
-      with_items:
-        - /var/lib/rancher/rke2
+        state: absent
+      loop:
         - /etc/rancher/rke2
+        - /var/lib/rancher/rke2
+        - /var/lib/kubelet
+        - /var/lib/kubelet/pods
+        - /var/lib/cni
+        - /var/log/pods
+        - /var/log/containers
+        - /opt/rke2
+        - /opt/cni
         - /usr/local/bin/rke2
-        - /var/lib/rancher/rke2/server/db/etcd
+        - /usr/local/bin/kubectl
+        - /home/ubuntu/.kube
         - /run/k3s
         - /run/flannel
+        - /etc/cni
+        - /var/run/flannel
+        - /var/run/k3s
+        - /usr/local/bin/ctr
+        - /usr/local/bin/crictl
+        - /usr/local/bin/containerd*
+
+    - name: Clean up network interfaces
+      ansible.builtin.shell: |
+        ip link delete cni0 || true
+        ip link delete flannel.1 || true
+        ip link delete flannel-v6.1 || true
+        rm -rf /var/lib/cni/
+        rm -rf /etc/cni/
+      changed_when: false
+      failed_when: false
+
+    - name: Flush iptables
+      ansible.builtin.shell: |
+        iptables -F
+        iptables -X
+        iptables -t nat -F
+        iptables -t nat -X
+        iptables -t mangle -F
+        iptables -t mangle -X
+        iptables -P INPUT ACCEPT
+        iptables -P FORWARD ACCEPT
+        iptables -P OUTPUT ACCEPT
+      changed_when: false
+      failed_when: false
+
+    - name: Verify directory removal
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/rancher/rke2
+        - /var/lib/rancher/rke2
         - /var/lib/kubelet
+        - /usr/local/bin/rke2
+        - /usr/local/bin/kubectl
+        - /home/ubuntu/.kube
+      register: dir_check
+      failed_when: false
 
-    - name: Validation - Check RKE2 services are disabled
-      ansible.builtin.service_facts:
-      register: services_state
-
-    - name: Validation - Display cleanup results
+    - name: Log directories that could not be removed
       ansible.builtin.debug:
-        msg: |
-          Cleanup Validation Results:
-          --------------------------
-          RKE2 Processes Running: {{ 'Yes' if process_check.stdout else 'No' }}
-          RKE2 Directories Present: {{ 'Yes' if (dir_check.results | map(attribute='stat.exists') | select('true') | list) else 'No' }}
-          RKE2 Services Status:
-            - rke2-server: {{ services_state.ansible_facts.services['rke2-server.service'].state if 'rke2-server.service' in services_state.ansible_facts.services else 'Not Found' }}
-            - rke2-agent: {{ services_state.ansible_facts.services['rke2-agent.service'].state if 'rke2-agent.service' in services_state.ansible_facts.services else 'Not Found' }}
+        msg: "Could not remove directory: {{ item.item }}"
+      loop: "{{ dir_check.results }}"
+      when: item.stat.exists
 
-    - name: Validation - Assert cleanup was successful
-      ansible.builtin.assert:
-        that:
-          - "not process_check.stdout or process_check.stdout == ''"
-        fail_msg: "RKE2 cleanup validation failed. Please check the validation results above."
-        success_msg: "RKE2 cleanup validation successful - all components removed."
+    - name: Recommend reboot
+      ansible.builtin.debug:
+        msg: "Cleanup complete. A system reboot is recommended for a clean state."

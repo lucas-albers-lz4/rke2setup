@@ -1,106 +1,43 @@
 ---
 - name: Create RKE2 config directory on workers
   ansible.builtin.file:
-    path: "{{ paths.rke2.config }}"
+    path: /etc/rancher/rke2
     state: directory
     mode: '0755'
+    owner: root
+    group: root
+  become: true
 
 - name: Configure worker nodes
-  ansible.builtin.template:
-    src: config.yaml.j2
-    dest: "{{ paths.rke2.config }}/config.yaml"
-    mode: '0644'
-  vars:
-    node_type: "{{ install_types.agent }}"
-    is_first_server: false
+  block:
+    - name: Ensure token is defined
+      ansible.builtin.assert:
+        that:
+          - rke2_token is defined
+          - rke2_token | length > 0
+        fail_msg: "RKE2 token must be defined for worker nodes"
 
-- name: Install RKE2 agent
-  ansible.builtin.get_url:
+    - name: Configure RKE2 for workers
+      ansible.builtin.template:
+        src: config.yaml.j2
+        dest: /etc/rancher/rke2/config.yaml
+        mode: '0600'
+
+    - name: Verify token from control plane
+      ansible.builtin.debug:
+        msg:
+          - "First control plane: {{ groups['control_plane_nodes'][0] }}"
+          - "Token from CP: {{ hostvars[groups['control_plane_nodes'][0]].rke2_token | default('UNDEFINED') }}"
+      when: not hostvars[groups['control_plane_nodes'][0]].rke2_token is defined
+
+- name: Download RKE2 installation script
+  get_url:
     url: https://get.rke2.io
     dest: /tmp/rke2-install.sh
     mode: '0755'
-  register: rke2_installer
+  register: download_result
 
-- name: Execute RKE2 agent installation
-  ansible.builtin.shell: |
-    INSTALL_RKE2_TYPE=agent sh /tmp/rke2-install.sh
-  args:
-    creates: "{{ paths.rke2.binary }}"
-  environment:
-    INSTALL_RKE2_METHOD: tar
-
-- name: Verify RKE2 agent installation
-  ansible.builtin.stat:
-    path: "{{ item }}"
-  register: rke2_files
-  with_items:
-    - "{{ paths.rke2.binary }}"
-    - "{{ paths.rke2.data }}/bin/rke2"
-    - "{{ paths.rke2.config }}"
-
-- name: Debug RKE2 file status
-  ansible.builtin.debug:
-    msg: "{{ item.item }} exists: {{ item.stat.exists }}"
-  loop: "{{ rke2_files.results }}"
-
-- name: Capture service status before start
-  ansible.builtin.command:
-    cmd: systemctl status rke2-agent
-  register: pre_service_status
-  failed_when: false
-  changed_when: false
-
-- name: Start and enable RKE2 agent service
-  ansible.builtin.systemd:
-    name: rke2-agent
-    state: started
-    enabled: true
-  register: agent_start_result
-
-- name: Collect diagnostic information on failure
-  when: agent_start_result is failed
-  block:
-    - name: Get systemctl status
-      ansible.builtin.command:
-        cmd: systemctl status rke2-agent
-      register: service_status
-      failed_when: false
-
-    - name: Get recent journal entries
-      ansible.builtin.command:
-        cmd: journalctl -xeu rke2-agent.service --no-pager -n 50
-      register: journal_output
-      failed_when: false
-
-    - name: Check RKE2 agent logs
-      ansible.builtin.command:
-        cmd: cat /var/lib/rancher/rke2/agent/logs/rke2-agent.log
-      register: agent_logs
-      failed_when: false
-
-    - name: Display diagnostic information
-      ansible.builtin.debug:
-        msg: |
-          RKE2 Agent Service Failed to Start
-          
-          Pre-start status:
-          {{ pre_service_status.stdout }}
-          
-          Current status:
-          {{ service_status.stdout }}
-          
-          Journal entries:
-          {{ journal_output.stdout }}
-          
-          Agent logs:
-          {{ agent_logs.stdout }}
-
-    - name: Fail with detailed error
-      ansible.builtin.fail:
-        msg: |
-          RKE2 agent service failed to start. 
-          See above diagnostic information for details.
-          Common issues:
-          - Network connectivity to control plane
-          - Invalid token or server URL
-          - File permissions issues
+- name: Install RKE2 agent
+  shell: |
+    INSTALL_RKE2_TYPE=agent bash /tmp/rke2-install.sh
+  when: download_result is success

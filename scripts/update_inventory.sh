@@ -15,6 +15,9 @@ if [ ! -f "inventory/hosts.txt" ]; then
 fi
 
 # Generate inventory
-python3 scripts/generate_inventory.py inventory/hosts.txt
-
-echo -e "${GREEN}Inventory updated successfully!${NC}"
+if python3 scripts/generate_inventory.py inventory/hosts.txt; then
+    echo -e "${GREEN}Inventory updated successfully!${NC}"
+else
+    echo -e "${RED}Failed to update inventory${NC}" >&2
+    exit 1
+fi

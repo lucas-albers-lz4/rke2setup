@@ -1,0 +1,73 @@
+---
+- name: Verify Host Information and Connectivity
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Set expected IP from inventory
+      ansible.builtin.set_fact:
+        expected_ip: "{{ ansible_host }}"
+
+    - name: Get all IP addresses
+      ansible.builtin.set_fact:
+        real_ips: "{{ ansible_all_ipv4_addresses | select('match', '^(?!127\\.).*') | list }}"
+
+    - name: Check for IP conflicts
+      ansible.builtin.set_fact:
+        ip_conflicts: "{{ 'Not Detected' if (real_ips | length) == 1 else 'Detected' }}"
+
+    - name: Get hosts file content
+      ansible.builtin.command: cat /etc/hosts
+      register: hosts_file
+      changed_when: false
+
+    - name: Get DNS resolution details
+      ansible.builtin.shell: |
+        #!/bin/bash
+        set -o pipefail
+        echo "=== getent hosts ==="
+        getent hosts {{ inventory_hostname }} || echo "No getent entry found"
+        echo -e "\n=== nslookup ==="
+        nslookup {{ inventory_hostname }} || echo "No DNS entry found"
+      args:
+        executable: /bin/bash
+      register: dns_details
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display verification results
+      ansible.builtin.debug:
+        msg:
+          - "=== Host Verification Report ==="
+          - "Host: {{ inventory_hostname }}"
+          - "System Hostname: {{ ansible_hostname }}"
+          - "Expected IP: {{ expected_ip }}"
+          - "All IPs: {{ real_ips | join(', ') }}"
+          - "=== /etc/hosts content ==="
+          - "{{ hosts_file.stdout }}"
+          - "=== DNS Resolution Details ==="
+          - "{{ dns_details.stdout }}"
+          - "IP Conflicts: {{ ip_conflicts }}"
+          - "Status: {{ 'PASS' if (ansible_hostname | lower == inventory_hostname | lower) and 
+                                (expected_ip in real_ips) and 
+                                (dns_details.rc == 0) and 
+                                (ip_conflicts == 'Not Detected')
+                      else 'FAIL' }}"
+
+    - name: Fail if verification issues detected
+      ansible.builtin.fail:
+        msg: |-
+          Host verification failed for {{ inventory_hostname }}:
+          {%- if ip_conflicts == 'Detected' %}
+          - IP conflict detected
+          {%- endif %}
+          {%- if dns_details.rc != 0 %}
+          - DNS resolution failed
+          {%- endif %}
+          {%- if ansible_hostname | lower != inventory_hostname | lower %}
+          - Hostname mismatch
+          {%- endif %}
+      when: >-
+        ip_conflicts == 'Detected' or
+        dns_details.rc != 0 or
+        ansible_hostname | lower != inventory_hostname | lower or
+        expected_ip not in real_ips

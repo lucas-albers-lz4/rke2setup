@@ -1,18 +1,34 @@
 ---
 - name: Create RKE2 config directory for additional control planes
   ansible.builtin.file:
-    path: "{{ paths.rke2.config }}"
+    path: /etc/rancher/rke2
     state: directory
     mode: '0755'
+    owner: root
+    group: root
+  become: true
 
 - name: Configure additional control plane nodes
-  ansible.builtin.template:
-    src: config.yaml.j2
-    dest: "{{ paths.rke2.config }}/config.yaml"
-    mode: '0644'
-  vars:
-    node_type: "{{ install_types.server }}"
-    is_first_server: false
+  block:
+    - name: Ensure token is defined
+      ansible.builtin.assert:
+        that:
+          - rke2_token is defined
+          - rke2_token | length > 0
+        fail_msg: "RKE2 token must be defined for additional control plane nodes"
+
+    - name: Configure RKE2 for additional control planes
+      ansible.builtin.template:
+        src: config.yaml.j2
+        dest: /etc/rancher/rke2/config.yaml
+        mode: '0600'
+  rescue:
+    - name: Debug token information
+      ansible.builtin.debug:
+        msg: 
+          - "Inventory Hostname: {{ inventory_hostname }}"
+          - "Defined Variables: {{ hostvars[inventory_hostname] }}"
+      failed_when: true
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:
@@ -22,21 +38,48 @@
   register: rke2_installer
 
 - name: Install RKE2 server
-  ansible.builtin.shell: |
-    set -o pipefail
-    INSTALL_RKE2_TYPE=server sh /tmp/rke2-install.sh
-  args:
-    creates: "{{ commands.rke2 }}"
-    executable: /bin/bash
-  environment:
-    INSTALL_RKE2_METHOD: tar
+  shell: |
+    INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
+  register: install_result
+
+- name: Verify RKE2 installation
+  include_tasks: verify_installation.yml
+
+- name: Check RKE2 service status
+  include_tasks: verify_rke2_service.yml
+
+- name: Wait for first control plane readiness
+  ansible.builtin.include_tasks: wait_for_server.yml
 
 - name: Enable and start RKE2 server
-  ansible.builtin.systemd:
-    name: rke2-server
-    enabled: true
-    state: started
-    daemon_reload: true
+  block:
+    - name: Start RKE2 server service
+      ansible.builtin.systemd:
+        name: rke2-server
+        enabled: true
+        state: started
+        daemon_reload: true
+      register: rke2_service
+
+    - name: Wait for local node readiness
+      ansible.builtin.shell: |
+        {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: node_ready
+      until: node_ready.stdout == "True"
+      retries: 30
+      delay: 10
+      changed_when: false
+  rescue:
+    - name: Get RKE2 server logs on failure
+      ansible.builtin.command: journalctl -u rke2-server.service --no-pager -n 50
+      register: rke2_logs
+
+    - name: Display RKE2 logs
+      ansible.builtin.debug:
+        var: rke2_logs.stdout_lines
 
 - name: Verify RKE2 server installation
   ansible.builtin.stat:
@@ -60,7 +103,7 @@
           - "Token status: {{ rke2_token is defined }}"
           - "Token length: {{ rke2_token | default('UNDEFINED') | length }}"
           - "Current host: {{ inventory_hostname }}"
-          - "First control plane: {{ groups['three_node_control_plane'][0] }}"
+          - "First control plane: {{ groups['control_plane_nodes'][0] }}"
 
     - name: Fail with detailed token information if undefined
       ansible.builtin.fail:
@@ -76,3 +119,19 @@
           2. Check fact gathering settings
           3. Ensure token is set on first control plane node
           4. Run with -vvv for more details
+
+- name: Verify token from first control plane
+  ansible.builtin.debug:
+    msg: 
+      - "First control plane: {{ groups['control_plane_nodes'][0] }}"
+      - "Token from first CP: {{ hostvars[groups['control_plane_nodes'][0]].rke2_token | default('UNDEFINED') }}"
+  when: inventory_hostname != groups['control_plane_nodes'][0]
+
+- name: Check node registration
+  shell: |
+    echo -e "\n=== Node Registration Status ===" >> /tmp/rke2-diagnostics.log
+    if [ -f "{{ paths.rke2.kubeconfig }}" ]; then
+      {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} -o yaml \
+        --kubeconfig={{ paths.rke2.kubeconfig }} >> /tmp/rke2-diagnostics.log
+    fi
+  ignore_errors: true

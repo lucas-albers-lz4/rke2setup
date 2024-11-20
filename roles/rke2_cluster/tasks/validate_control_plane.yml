@@ -13,19 +13,27 @@
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
 
     - name: Verify etcd pods
-      ansible.builtin.command:
-        cmd: "{{ commands.kubectl }} get pods -n kube-system -l component=etcd -o jsonpath='{.items[*].status.phase}'"
+      ansible.builtin.shell: |
+        kubectl get pods -n kube-system -l component=etcd --no-headers | awk '{print $3}'
       register: etcd_pods
-      until: etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['three_node_control_plane'] | length
-      retries: 30
-      delay: 10
-      changed_when: false
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+
+    - name: Debug etcd pods status
+      ansible.builtin.debug:
+        msg: 
+          - "Etcd pods status: {{ etcd_pods.stdout_lines }}"
+          - "Expected count: {{ groups['control_plane_nodes'] | length }}"
+
+    - name: Assert etcd pods are running
+      ansible.builtin.assert:
+        that:
+          - "etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['control_plane_nodes'] | length"
+        fail_msg: "Not all etcd pods are running. Found {{ etcd_pods.stdout.split() | select('match', '^Running$') | list | length }} running pods, expected {{ groups['control_plane_nodes'] | length }}"
 
     - name: Set control plane validation flag
       ansible.builtin.set_fact:
         control_plane_validated: true
       when: 
         - etcd_health.stdout == "ok"
-        - etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['three_node_control_plane'] | length
+        - etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['control_plane_nodes'] | length

@@ -1,0 +1,16 @@
+---
+- name: RKE2 Cluster reboot Playbook
+  hosts: six_node_cluster
+  become: true
+  gather_facts: false
+  strategy: linear
+
+  tasks:
+    - include_tasks: roles/rke2_cluster/tasks/reboot.yml
+    - name: Verify system state
+      shell: |
+        echo -e "\n=== System State ===" >> /tmp/rke2-diagnostics.log
+        systemctl is-system-running >> /tmp/rke2-diagnostics.log
+        systemctl list-units --failed >> /tmp/rke2-diagnostics.log
+
+

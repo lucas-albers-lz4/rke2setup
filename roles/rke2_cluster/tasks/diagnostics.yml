@@ -1,0 +1,114 @@
+---
+- name: Collect comprehensive RKE2 diagnostics
+  block:
+    - name: Gather service and system state
+      shell: |
+        {
+          echo "=== RKE2 Service Status ==="
+          systemctl status rke2-server
+          
+          echo -e "\n=== RKE2 Service Dependencies ==="
+          systemctl list-dependencies rke2-server
+          
+          echo -e "\n=== Recent RKE2 Logs ==="
+          journalctl -u rke2-server -n 200 --no-pager
+          
+          echo -e "\n=== Containerd Status ==="
+          systemctl status containerd
+          
+          echo -e "\n=== RKE2 Configuration ==="
+          cat /etc/rancher/rke2/config.yaml || echo "Config file not found"
+          
+          echo -e "\n=== System Resources ==="
+          echo "Memory:"
+          free -h
+          echo -e "\nDisk Space:"
+          df -h /var/lib/rancher
+          
+          echo -e "\n=== Network Status ==="
+          echo "Listening Ports:"
+          ss -tulpn | grep -E ':(6443|9345)'
+          echo -e "\nNetwork Interfaces:"
+          ip addr show
+          
+          echo -e "\n=== RKE2 File Permissions ==="
+          ls -la /etc/rancher/rke2/
+          ls -la /var/lib/rancher/rke2/
+          
+          echo -e "\n=== Container Runtime Status ==="
+          crictl info || echo "crictl not available"
+          
+          echo -e "\n=== SELinux Status ==="
+          getenforce || echo "SELinux not installed"
+          
+          echo -e "\n=== Firewall Status ==="
+          systemctl status firewalld || echo "firewalld not installed"
+        } > /tmp/rke2-diagnostics.log
+      ignore_errors: true
+      register: diagnostics_result
+
+    - name: Check for common issues
+      shell: |
+        ISSUES=()
+        
+        # Check if containerd is running
+        if ! systemctl is-active containerd >/dev/null 2>&1; then
+          ISSUES+=("containerd service is not running")
+        fi
+        
+        # Check RKE2 config file
+        if [ ! -f /etc/rancher/rke2/config.yaml ]; then
+          ISSUES+=("RKE2 config file missing")
+        fi
+        
+        # Check required directories
+        for dir in /etc/rancher/rke2 /var/lib/rancher/rke2; do
+          if [ ! -d "$dir" ]; then
+            ISSUES+=("Required directory $dir is missing")
+          fi
+        done
+        
+        # Check disk space
+        if [[ $(df /var/lib/rancher --output=pcent | tail -1 | tr -d ' %') -gt 90 ]]; then
+          ISSUES+=("Low disk space on /var/lib/rancher")
+        fi
+        
+        # Check memory
+        if [[ $(free | awk '/Mem:/ {print int($4/$2 * 100)}') -lt 20 ]]; then
+          ISSUES+=("Low available memory (less than 20%)")
+        fi
+        
+        # Check required ports
+        for port in 6443 9345; do
+          if ! ss -tulpn | grep -q ":$port"; then
+            ISSUES+=("Port $port is not listening")
+          fi
+        done
+        
+        # Output results
+        if [ ${#ISSUES[@]} -eq 0 ]; then
+          echo "No common issues detected"
+        else
+          printf '%s\n' "${ISSUES[@]}"
+        fi
+      register: issues_check
+      changed_when: false
+
+    - name: Display detected issues
+      ansible.builtin.debug:
+        msg: "{{ issues_check.stdout_lines }}" 
+
+    - name: Collect RKE2 state information
+      shell: |
+        {
+          echo "=== RKE2 State Information ==="
+          if [ -f "/var/log/rke2-init/progress" ]; then
+            cat /var/log/rke2-init/progress
+          fi
+          
+          echo -e "\n=== RKE2 Component Status ==="
+          if [ -f "{{ paths.rke2.kubeconfig }}" ]; then
+            {{ paths.rke2.bin }}/kubectl get componentstatuses --kubeconfig={{ paths.rke2.kubeconfig }}
+          fi
+        } >> /tmp/rke2-diagnostics.log
+      ignore_errors: true
