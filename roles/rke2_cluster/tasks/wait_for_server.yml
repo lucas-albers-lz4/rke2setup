@@ -38,14 +38,14 @@
         state: started
       register: rke2_service
       until: rke2_service.status.ActiveState == "active"
-      retries: 30
-      delay: 10
+      retries: "{{ retry_extended }}"
+      delay: "{{ retry_delay }}"
 
     - name: Wait for supervisor and API ports
       ansible.builtin.wait_for:
         host: "{{ item.host }}"
         port: "{{ item.port }}"
-        timeout: 300
+        timeout: "{{ timeout_startup }}"
         state: started
       loop:
         - { host: "{{ groups['control_plane_nodes'][0] }}", port: 9345 }
@@ -57,21 +57,14 @@
         url: "https://{{ groups['control_plane_nodes'][0] }}:6443/healthz"
         validate_certs: false
         return_content: true
+        timeout: "{{ timeout_api_check }}"
       register: healthz_check
       until: healthz_check.content == "ok"
-      retries: 30
-      delay: 10
+      retries: "{{ retry_standard }}"
+      delay: "{{ retry_delay }}"
   rescue:
     - name: Run diagnostics on failure
       include_tasks: diagnostics.yml
-
-    - name: Fail with detailed error
-      fail:
-        msg: >-
-          RKE2 cluster failed to become ready. 
-          Service status: {{ rke2_service.status | default('Unknown') }}
-          Port check: {{ port_check | default('Not completed') }}
-          API health: {{ healthz_check | default('Not completed') }}
 
 - name: Wait for RKE2 binaries to be installed
   wait_for:

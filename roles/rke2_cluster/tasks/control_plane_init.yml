@@ -65,12 +65,16 @@
     state: started
     enabled: yes
   become: true
+  register: server_start
+  until: server_start is success
+  retries: "{{ retry_standard }}"
+  delay: "{{ retry_delay }}"
 
 - name: Wait for RKE2 server to be ready
   ansible.builtin.wait_for:
     path: "{{ paths.rke2.bin }}/kubectl"
     state: present
-    timeout: 300
+    timeout: "{{ timeout_startup }}"
 
 - name: Create kubectl symlink
   ansible.builtin.file:

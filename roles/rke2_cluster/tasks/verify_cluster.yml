@@ -14,8 +14,8 @@
         executable: /bin/bash
       register: cp_ready_check
       until: cp_ready_check.rc == 0
-      retries: 30
-      delay: 10
+      retries: "{{ retry_extended }}"
+      delay: "{{ retry_delay }}"
       changed_when: false
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
@@ -25,8 +25,8 @@
         {{ paths.rke2.bin }}/kubectl get --raw=/healthz/etcd
       register: etcd_health
       until: etcd_health.stdout == "ok"
-      retries: 30
-      delay: 10
+      retries: "{{ retry_extended }}"
+      delay: "{{ retry_delay }}"
       changed_when: false
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"

@@ -108,6 +108,9 @@
         state: started
         daemon_reload: true
       register: rke2_service
+      until: rke2_service is success
+      retries: "{{ retry_standard }}"
+      delay: "{{ retry_delay }}"
 
     - name: Wait for local node readiness
       ansible.builtin.shell: |
@@ -117,17 +120,9 @@
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
       register: node_ready
       until: node_ready.stdout == "True"
-      retries: 30
-      delay: 10
+      retries: "{{ retry_extended }}"
+      delay: "{{ retry_delay }}"
       changed_when: false
-  rescue:
-    - name: Get RKE2 server logs on failure
-      ansible.builtin.command: journalctl -u rke2-server.service --no-pager -n 50
-      register: rke2_logs
-
-    - name: Display RKE2 logs
-      ansible.builtin.debug:
-        var: rke2_logs.stdout_lines
 
 - name: Verify RKE2 server installation
   ansible.builtin.stat:
