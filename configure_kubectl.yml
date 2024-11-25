@@ -35,10 +35,3 @@
       loop:
         - "{{ paths.user.home }}/.bashrc"
         - /root/.bashrc
-
-    - name: Create kubectl symlink
-      ansible.builtin.file:
-        src: "{{ paths.rke2.bin }}/kubectl"
-        dest: /usr/local/bin/kubectl
-        state: link
-        force: true

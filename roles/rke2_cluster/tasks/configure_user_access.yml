@@ -21,10 +21,3 @@
     state: link
     force: true
   when: kubeconfig_file.stat.exists
-
-- name: Create symlink for kubectl
-  ansible.builtin.file:
-    src: "{{ paths.rke2.bin }}/kubectl"
-    dest: "{{ paths.system.bin }}/kubectl"
-    state: link
-    force: true

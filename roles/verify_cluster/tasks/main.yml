@@ -28,13 +28,6 @@
     - /root/.bashrc
     - /home/{{ ansible_user }}/.bashrc
 
-- name: Create kubectl symlink
-  ansible.builtin.file:
-    src: /var/lib/rancher/rke2/bin/kubectl
-    dest: /usr/local/bin/kubectl
-    state: link
-    force: true
-
 - name: Verify kubectl configuration
   ansible.builtin.stat:
     path: /etc/rancher/rke2/rke2.yaml

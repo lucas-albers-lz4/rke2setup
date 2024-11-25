@@ -58,3 +58,26 @@
 - name: Verify control plane configuration
   ansible.builtin.include_tasks: validate_control_plane.yml
   when: inventory_hostname == groups['control_plane_nodes'][0]
+
+- name: Start RKE2 server service
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: started
+    enabled: yes
+  become: true
+
+- name: Wait for RKE2 server to be ready
+  ansible.builtin.wait_for:
+    path: "{{ paths.rke2.bin }}/kubectl"
+    state: present
+    timeout: 300
+
+- name: Create kubectl symlink
+  ansible.builtin.file:
+    src: "{{ paths.rke2.bin }}/kubectl"
+    dest: "{{ paths.system.bin }}/kubectl"
+    state: link
+    force: true
+    owner: "root"
+    group: "root"
+  become: true

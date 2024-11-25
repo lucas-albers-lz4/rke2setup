@@ -46,35 +46,31 @@
 
 - name: Create RKE2 config directory
   ansible.builtin.file:
-    path: /etc/rancher/rke2
+    path: "{{ paths.rke2.config }}"
     state: directory
     mode: '0755'
-    owner: root
-    group: root
   become: true
 
 - name: Configure first control plane node
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: /etc/rancher/rke2/config.yaml
-    mode: '0600'
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  become: true
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:
     url: https://get.rke2.io
     dest: /tmp/rke2-install.sh
-    mode: '0755'
-  register: rke2_installer
+    mode: '0700'
+  become: true
 
-- name: Install RKE2 server
-  block:
-    - name: Execute RKE2 server installation
-      ansible.builtin.shell: |
-        INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
-      args:
-        creates: "{{ commands.rke2 }}"
-      environment:
-        INSTALL_RKE2_METHOD: tar
+- name: Execute RKE2 server installation
+  ansible.builtin.shell: |
+    INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
+  args:
+    creates: /usr/local/bin/rke2
+  become: true
 
 - name: Manage RKE2 server service
   block:
@@ -189,3 +185,10 @@
     msg: "Token status for {{ item }}: {{ hostvars[item].rke2_token is defined }}"
   with_items: "{{ groups['all'] }}"
   run_once: true
+
+- name: Wait for first control plane to be ready
+  ansible.builtin.wait_for:
+    path: "{{ paths.rke2.kubeconfig }}"
+    state: present
+    timeout: 300
+  register: kubeconfig_file
