@@ -6,26 +6,24 @@ cluster_type: "six_node"
 first_server_ip: ""
 
 # Installation Paths
-paths:
-  base:
-    rke2:
-      config: /etc/rancher/rke2
-      data: /var/lib/rancher/rke2
-      bin: /var/lib/rancher/rke2/bin
-      kubeconfig: /etc/rancher/rke2/rke2.yaml
-    system:
-      bin: /usr/local/bin
-      root:
-        home: /root
-        kube: /root/.kube
-        config: /root/.kube/config
-        bashrc: /root/.bashrc
-  user:
-    home: "/home/{{ ansible_user }}"
-    kube: "/home/{{ ansible_user }}/.kube"
-    config: "/home/{{ ansible_user }}/.kube/config"
-    ssh: "/home/{{ ansible_user }}/.ssh"
-    bashrc: "/home/{{ ansible_user }}/.bashrc"
+rke2_paths:
+  # Pre-installation paths (always exist)
+  system:
+    bin: "/usr/local/bin"
+    systemd: "/etc/systemd/system"
+    
+  # Paths that should exist after package install
+  config:
+    base: "/etc/rancher/rke2"
+    config_yaml: "/etc/rancher/rke2/config.yaml"
+    
+  # Paths that exist after service start
+  runtime:
+    base: "/var/lib/rancher/rke2"
+    bin: "/var/lib/rancher/rke2/bin"
+    server: "/var/lib/rancher/rke2/server"
+    kubeconfig: "/var/lib/rancher/rke2/server/cred/admin.kubeconfig"
+    node_token: "/var/lib/rancher/rke2/server/node-token"
 
 # Wait Configuration
 wait_config:
@@ -148,3 +146,17 @@ rke2_config:
     - "kubernetes.default"
     - "kubernetes.default.svc"
     - "kubernetes.default.svc.cluster.local"
+
+# Timeout configurations
+retry_delay: 10
+retry_quick: 3
+retry_standard: 6
+retry_extended: 30
+
+timeout_short: 30
+timeout_standard: 60
+timeout_service: 180
+timeout_startup: 300
+timeout_reboot: 600
+timeout_connection: 30
+timeout_api_check: 180

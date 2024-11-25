@@ -39,24 +39,14 @@
   failed_when: wait_down is success
   ignore_errors: true
 
-- name: Wait for system to come back
-  wait_for_connection:
-    delay: 10
-    sleep: 5
-    timeout: 600
-    connect_timeout: 5
-  register: wait_up
-  retries: 30
-  delay: 10
-  until: wait_up is success
-
 - name: Wait for port 22 to be available
   wait_for:
     host: "{{ ansible_host }}"
     port: 22
     state: started
-    delay: 5
+    delay: 10
     timeout: 300
+    connect_timeout: 30
   delegate_to: localhost
   become: false
 
@@ -65,6 +55,17 @@
     timeout: 30
   delegate_to: localhost
   become: false
+
+- name: Wait for system to come back
+  wait_for_connection:
+    delay: 10
+    sleep: 5
+    timeout: 600
+    connect_timeout: 30
+  register: wait_up
+  retries: 30
+  delay: 10
+  until: wait_up is success
 
 - name: Post-reboot verification
   block:
@@ -81,6 +82,9 @@
         - systemd-journald
         - ssh
       register: service_status
+      retries: "{{ retry_standard }}"
+      delay: "{{ retry_delay }}"
+      until: service_status is success
 
     - name: Check system status
       shell: systemctl is-system-running
@@ -92,7 +96,7 @@
       wait_for:
         host: "{{ ansible_host }}"
         port: 22
-        timeout: 60
+        timeout: "{{ timeout_standard }}"
       delegate_to: localhost
       become: false
 
