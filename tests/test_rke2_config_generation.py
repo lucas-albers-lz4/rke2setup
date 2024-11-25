@@ -1,286 +1,195 @@
-import sys
+#!/usr/bin/env python3
+
 import pytest
 import yaml
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent.parent))
-
-from scripts.generate_rke2_configs import generate_config_file, write_config
+import os
+from scripts.generate_rke2_configs import generate_base_vars, validate_inventory_data
+from jinja2 import Template, Environment
 
 @pytest.fixture
 def sample_inventory():
+    """Provide sample inventory data for testing."""
     return {
+        'all': {
+            'children': {
+                'six_node_cluster': {
+                    'children': {
+                        'control_plane_nodes': {
+                            'hosts': {
+                                'k1': {'ansible_host': '192.168.1.23'},
+                                'k2': {'ansible_host': '192.168.1.24'},
+                                'k3': {'ansible_host': '192.168.1.25'}
+                            }
+                        }
+                    }
+                }
+            }
+        },
         'rke2_config': {
-            'control_plane_nodes': ['192.168.1.23', '192.168.1.24', '192.168.1.25'],
             'tls-san': [
-                'K1.home.arpa',
-                'K2.home.arpa',
-                'K3.home.arpa',
+                '127.0.0.1',
                 '192.168.1.23',
-                '192.168.1.24',
-                '192.168.1.25',
                 'kubernetes',
-                'kubernetes.default',
-                'kubernetes.default.svc',
-                'kubernetes.default.svc.cluster.local'
-            ]
+                'kubernetes.default'
+            ],
+            'token': 'test123'
         }
     }
 
-@pytest.fixture
-def alternative_inventory():
-    return {
-        'rke2_config': {
-            'control_plane_nodes': ['10.0.0.10', '10.0.0.11', '10.0.0.12'],
-            'tls-san': [
-                'master1.example.com',
-                'master2.example.com',
-                'master3.example.com',
-                '10.0.0.10',
-                '10.0.0.11',
-                '10.0.0.12',
-                'kubernetes',
-                'kubernetes.default',
-                'kubernetes.default.svc',
-                'kubernetes.default.svc.cluster.local'
-            ]
-        }
+def test_validate_inventory(sample_inventory):
+    """Test inventory validation"""
+    assert validate_inventory_data(sample_inventory) is True
+
+def test_generate_base_vars(sample_inventory):
+    """Test generation of base variables"""
+    vars_data = generate_base_vars(sample_inventory)
+    assert 'tls_san' in vars_data
+    assert 'rke2_token' in vars_data
+    assert vars_data['rke2_token'] == 'test123'
+    assert '127.0.0.1' in vars_data['tls_san']
+
+def test_template_rendering(tmp_path):
+    """Test template rendering for different node types"""
+    # Create test template directory
+    template_dir = tmp_path / "templates"
+    template_dir.mkdir()
+    
+    # Copy template file for testing
+    template_content = """
+write-kubeconfig-mode: '0644'
+tls-san: {{ tls_san | to_yaml }}
+node-name: {{ inventory_hostname }}
+token: {{ rke2_token }}
+{% if inventory_hostname == groups['control_plane_nodes'][0] %}
+cluster-init: true
+{% else %}
+server: https://{{ hostvars[groups['control_plane_nodes'][0]].ansible_host }}:9345
+{% endif %}
+node-label:
+{% if inventory_hostname in groups['control_plane_nodes'] %}
+- node.kubernetes.io/instance-type=control-plane
+- kubernetes.io/hostname={{ inventory_hostname }}
+- workload.type=control-plane
+node-taint:
+- CriticalAddonsOnly=true:NoSchedule
+{% else %}
+- node.kubernetes.io/instance-type=worker
+- kubernetes.io/hostname={{ inventory_hostname }}
+- workload.type=mixed
+{% endif %}
+"""
+    template_file = template_dir / "config.yaml.j2"
+    template_file.write_text(template_content)
+
+    # Test variables
+    test_vars = {
+        'inventory_hostname': 'k1',
+        'groups': {
+            'control_plane_nodes': ['k1', 'k2', 'k3']
+        },
+        'hostvars': {
+            'k1': {'ansible_host': '192.168.1.23'}
+        },
+        'tls_san': ['127.0.0.1', '192.168.1.23'],
+        'rke2_token': 'test123'
     }
 
-def test_first_server_config(tmp_path, sample_inventory):
-    """Test generation of first control plane node config"""
-    print("\nTesting first server (k1) configuration:")
-    
-    hostname = "k1"
-    config = generate_config_file(hostname, sample_inventory, is_first=True)
-    config_file = tmp_path / f"config.yaml.{hostname}"
-    write_config(config, config_file)
-    
-    with open(config_file) as f:
-        written_config = yaml.safe_load(f)
-    
-    # Test required fields presence
-    print("\nChecking required fields:")
-    required_fields = ["write-kubeconfig-mode", "token", "tls-san", "node-name", "node-label", "node-taint", "cluster-init"]
-    for field in required_fields:
-        assert field in written_config, f"Missing required field: {field}"
-        print(f"✓ Found field: {field}")
-    
-    # Test field values
-    print("\nValidating field values:")
-    print(f"✓ write-kubeconfig-mode: {written_config['write-kubeconfig-mode']}")
-    print(f"✓ token: {written_config['token']}")
-    print(f"✓ node-name: {written_config['node-name']}")
-    assert written_config["cluster-init"] is True
-    print("✓ cluster-init is True")
-    
-    # Test node labels
-    print("\nChecking node labels:")
-    expected_labels = [
-        "node.kubernetes.io/instance-type=control-plane",
-        f"kubernetes.io/hostname={hostname}",
-        "workload.type=control-plane"
-    ]
-    for label in expected_labels:
-        assert label in written_config["node-label"], f"Missing label: {label}"
-        print(f"✓ Found label: {label}")
-    
-    # Test node taints
-    print("\nChecking node taints:")
-    assert "CriticalAddonsOnly=true:NoSchedule" in written_config["node-taint"]
-    print("✓ Found correct node taint")
-    
-    # Test TLS SANs
-    print("\nChecking TLS SANs:")
-    for san in written_config["tls-san"]:
-        print(f"✓ Found TLS SAN: {san}")
+    # TODO: Add actual template rendering test using Jinja2
+    # This would require setting up Ansible test fixtures or using Jinja2 directly
+    # For now, we're just verifying our variable generation
 
-def test_subsequent_server_config(tmp_path, sample_inventory):
-    """Test generation of subsequent control plane node configs"""
-    print("\nTesting subsequent server (k2) configuration:")
+def test_group_vars_generation(tmp_path, sample_inventory):
+    """Test group_vars file generation"""
+    vars_data = generate_base_vars(sample_inventory)
+    group_vars_dir = tmp_path / "group_vars"
+    group_vars_dir.mkdir()
     
-    hostname = "k2"
-    config = generate_config_file(hostname, sample_inventory, is_first=False)
-    config_file = tmp_path / f"config.yaml.{hostname}"
-    write_config(config, config_file)
-    
-    with open(config_file) as f:
-        written_config = yaml.safe_load(f)
-    
-    # Test required fields presence
-    print("\nChecking required fields:")
-    required_fields = ["write-kubeconfig-mode", "token", "tls-san", "node-name", "node-label", "node-taint", "server"]
-    for field in required_fields:
-        assert field in written_config, f"Missing required field: {field}"
-        print(f"✓ Found field: {field}")
-    
-    # Test field values
-    print("\nValidating field values:")
-    print(f"✓ write-kubeconfig-mode: {written_config['write-kubeconfig-mode']}")
-    print(f"✓ token: {written_config['token']}")
-    print(f"✓ node-name: {written_config['node-name']}")
-    assert written_config["server"] == "https://192.168.1.23:9345"
-    print(f"✓ server URL is correct: {written_config['server']}")
-    
-    # Test node labels
-    print("\nChecking node labels:")
-    expected_labels = [
-        "node.kubernetes.io/instance-type=control-plane",
-        f"kubernetes.io/hostname={hostname}",
-        "workload.type=control-plane"
-    ]
-    for label in expected_labels:
-        assert label in written_config["node-label"], f"Missing label: {label}"
-        print(f"✓ Found label: {label}")
-    
-    # Test node taints
-    print("\nChecking node taints:")
-    assert "CriticalAddonsOnly=true:NoSchedule" in written_config["node-taint"]
-    print("✓ Found correct node taint")
-    
-    # Test TLS SANs
-    print("\nChecking TLS SANs:")
-    for san in written_config["tls-san"]:
-        print(f"✓ Found TLS SAN: {san}")
+    vars_file = group_vars_dir / "all.yml"
+    with open(vars_file, 'w') as f:
+        yaml.dump(vars_data, f)
 
-def test_yaml_validity(tmp_path, sample_inventory):
-    """Test that generated YAML is valid for both first and subsequent servers"""
-    print("\nTesting YAML validity for all server configurations:")
+    assert vars_file.exists()
+    with open(vars_file) as f:
+        written_vars = yaml.safe_load(f)
     
-    for hostname, is_first in [("k1", True), ("k2", False)]:
-        print(f"\nTesting {hostname} YAML validity:")
-        config = generate_config_file(hostname, sample_inventory, is_first=is_first)
-        config_file = tmp_path / f"config.yaml.{hostname}"
-        
-        # Test YAML writing
-        write_config(config, config_file)
-        print(f"✓ Successfully wrote YAML file for {hostname}")
-        
-        # Test YAML reading
-        try:
-            with open(config_file) as f:
-                yaml.safe_load(f)
-            print(f"✓ Successfully validated YAML syntax for {hostname}")
-        except yaml.YAMLError as e:
-            pytest.fail(f"Invalid YAML generated for {hostname}: {e}")
+    assert written_vars['rke2_token'] == 'test123'
+    assert '127.0.0.1' in written_vars['tls_san']
 
-def test_first_server_config_alternative(tmp_path, alternative_inventory):
-    """Test generation of first control plane node config with alternative hostnames"""
-    print("\nTesting first server (master1) configuration with alternative names:")
+def test_node_specific_config(sample_inventory):
+    """Test node-specific configuration generation"""
+    vars_data = generate_base_vars(sample_inventory)
     
-    hostname = "master1"
-    config = generate_config_file(hostname, alternative_inventory, is_first=True)
-    config_file = tmp_path / f"config.yaml.{hostname}"
-    write_config(config, config_file)
-    
-    with open(config_file) as f:
-        written_config = yaml.safe_load(f)
-    
-    # Test required fields presence
-    print("\nChecking required fields:")
-    required_fields = ["write-kubeconfig-mode", "token", "tls-san", "node-name", "node-label", "node-taint", "cluster-init"]
-    for field in required_fields:
-        assert field in written_config, f"Missing required field: {field}"
-        print(f"✓ Found field: {field}")
-    
-    # Test field values
-    print("\nValidating field values:")
-    print(f"✓ write-kubeconfig-mode: {written_config['write-kubeconfig-mode']}")
-    print(f"✓ token: {written_config['token']}")
-    print(f"✓ node-name: {written_config['node-name']}")
-    assert written_config["cluster-init"] is True
-    print("✓ cluster-init is True")
-    assert written_config["node-name"] == "master1"
-    print("✓ node-name is correct: master1")
-    
-    # Test node labels
-    print("\nChecking node labels:")
-    expected_labels = [
-        "node.kubernetes.io/instance-type=control-plane",
-        "kubernetes.io/hostname=master1",
-        "workload.type=control-plane"
-    ]
-    for label in expected_labels:
-        assert label in written_config["node-label"], f"Missing label: {label}"
-        print(f"✓ Found label: {label}")
-    
-    # Test node taints
-    print("\nChecking node taints:")
-    assert "CriticalAddonsOnly=true:NoSchedule" in written_config["node-taint"]
-    print("✓ Found correct node taint")
-    
-    # Test TLS SANs
-    print("\nChecking TLS SANs:")
-    for san in written_config["tls-san"]:
-        print(f"✓ Found TLS SAN: {san}")
+    # Test first control plane node config
+    test_vars = {
+        'inventory_hostname': 'k1',
+        'groups': {
+            'control_plane_nodes': ['k1', 'k2', 'k3']
+        },
+        'hostvars': {
+            'k1': {'ansible_host': '192.168.1.23'},
+            'k2': {'ansible_host': '192.168.1.24'},
+            'k3': {'ansible_host': '192.168.1.25'}
+        },
+        'tls_san': vars_data['tls_san'],
+        'rke2_token': vars_data['rke2_token']
+    }
+    assert 'cluster-init: true' in render_template(test_vars)
 
-def test_subsequent_server_config_alternative(tmp_path, alternative_inventory):
-    """Test generation of subsequent control plane node configs with alternative hostnames"""
-    print("\nTesting subsequent server (master2) configuration with alternative names:")
+def test_additional_control_plane_config(sample_inventory):
+    """Test additional control plane node configuration"""
+    vars_data = generate_base_vars(sample_inventory)
     
-    hostname = "master2"
-    config = generate_config_file(hostname, alternative_inventory, is_first=False)
-    config_file = tmp_path / f"config.yaml.{hostname}"
-    write_config(config, config_file)
-    
-    with open(config_file) as f:
-        written_config = yaml.safe_load(f)
-    
-    # Test required fields presence
-    print("\nChecking required fields:")
-    required_fields = ["write-kubeconfig-mode", "token", "tls-san", "node-name", "node-label", "node-taint", "server"]
-    for field in required_fields:
-        assert field in written_config, f"Missing required field: {field}"
-        print(f"✓ Found field: {field}")
-    
-    # Test field values
-    print("\nValidating field values:")
-    print(f"✓ write-kubeconfig-mode: {written_config['write-kubeconfig-mode']}")
-    print(f"✓ token: {written_config['token']}")
-    print(f"✓ node-name: {written_config['node-name']}")
-    assert written_config["server"] == "https://10.0.0.10:9345"
-    print(f"✓ server URL is correct: {written_config['server']}")
-    assert written_config["node-name"] == "master2"
-    print("✓ node-name is correct: master2")
-    
-    # Test node labels
-    print("\nChecking node labels:")
-    expected_labels = [
-        "node.kubernetes.io/instance-type=control-plane",
-        "kubernetes.io/hostname=master2",
-        "workload.type=control-plane"
-    ]
-    for label in expected_labels:
-        assert label in written_config["node-label"], f"Missing label: {label}"
-        print(f"✓ Found label: {label}")
-    
-    # Test node taints
-    print("\nChecking node taints:")
-    assert "CriticalAddonsOnly=true:NoSchedule" in written_config["node-taint"]
-    print("✓ Found correct node taint")
-    
-    # Test TLS SANs
-    print("\nChecking TLS SANs:")
-    for san in written_config["tls-san"]:
-        print(f"✓ Found TLS SAN: {san}")
+    # Test additional control plane node config
+    test_vars = {
+        'inventory_hostname': 'k2',
+        'groups': {
+            'control_plane_nodes': ['k1', 'k2', 'k3']
+        },
+        'hostvars': {
+            'k1': {'ansible_host': '192.168.1.23'},
+            'k2': {'ansible_host': '192.168.1.24'},
+            'k3': {'ansible_host': '192.168.1.25'}
+        },
+        'tls_san': vars_data['tls_san'],
+        'rke2_token': vars_data['rke2_token']
+    }
+    rendered = render_template(test_vars)
+    assert 'server: https://192.168.1.23:9345' in rendered
+    assert 'cluster-init: true' not in rendered
 
-def test_yaml_validity_alternative(tmp_path, alternative_inventory):
-    """Test that generated YAML is valid for both first and subsequent servers with alternative names"""
-    print("\nTesting YAML validity for all server configurations with alternative names:")
+def test_worker_node_config(sample_inventory):
+    """Test worker node configuration"""
+    vars_data = generate_base_vars(sample_inventory)
     
-    for hostname, is_first in [("master1", True), ("master2", False)]:
-        print(f"\nTesting {hostname} YAML validity:")
-        config = generate_config_file(hostname, alternative_inventory, is_first=is_first)
-        config_file = tmp_path / f"config.yaml.{hostname}"
-        
-        # Test YAML writing
-        write_config(config, config_file)
-        print(f"✓ Successfully wrote YAML file for {hostname}")
-        
-        # Test YAML reading
-        try:
-            with open(config_file) as f:
-                yaml.safe_load(f)
-            print(f"✓ Successfully validated YAML syntax for {hostname}")
-        except yaml.YAMLError as e:
-            pytest.fail(f"Invalid YAML generated for {hostname}: {e}")
+    test_vars = {
+        'inventory_hostname': 'worker1',
+        'groups': {
+            'control_plane_nodes': ['k1', 'k2', 'k3'],
+            'worker_nodes': ['worker1']
+        },
+        'hostvars': {
+            'k1': {'ansible_host': '192.168.1.23'},
+            'k2': {'ansible_host': '192.168.1.24'},
+            'k3': {'ansible_host': '192.168.1.25'},
+            'worker1': {'ansible_host': '192.168.1.26'}
+        },
+        'tls_san': vars_data['tls_san'],
+        'rke2_token': vars_data['rke2_token']
+    }
+    rendered = render_template(test_vars)
+    assert 'workload.type=mixed' in rendered
+    assert 'CriticalAddonsOnly=true:NoSchedule' not in rendered
+
+def render_template(test_vars):
+    """Helper function to render template with test variables"""
+    def to_yaml(data):
+        return yaml.dump(data, default_flow_style=False)
+
+    # Create Jinja2 environment with custom filter
+    env = Environment()
+    env.filters['to_yaml'] = to_yaml
+
+    with open('roles/rke2_cluster/templates/config.yaml.j2', 'r') as f:
+        template = env.from_string(f.read())
+    
+    return template.render(**test_vars)

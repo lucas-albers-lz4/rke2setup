@@ -2,65 +2,14 @@
 
 import yaml
 import os
-from pathlib import Path
 from datetime import datetime
 
-def read_inventory(inventory_path):
-    """Read the RKE2 inventory file."""
-    with open(inventory_path, 'r') as f:
-        return yaml.safe_load(f)
-
-def generate_base_config(inventory_data, hostname, is_first=False):
-    """Generate base configuration dictionary from inventory data."""
-    rke2_config = inventory_data.get('rke2_config', {})
-    
-    config = {
-        "write-kubeconfig-mode": rke2_config.get('write_kubeconfig_mode', '0644'),
-        "tls-san": rke2_config.get('tls-san', []),
-        "node-name": hostname.lower()
+def generate_base_vars(inventory_data):
+    """Generate base variables for all nodes."""
+    return {
+        'tls_san': inventory_data.get('rke2_config', {}).get('tls-san', []),
+        'rke2_token': inventory_data.get('rke2_config', {}).get('token', 'test123'),
     }
-    
-    # Add token for all nodes
-    config["token"] = rke2_config.get('token', 'test123')
-    
-    # First server node specific config
-    if is_first:
-        config["cluster-init"] = True
-    else:
-        first_node_ip = rke2_config.get('control_plane_nodes', ['192.168.1.23'])[0]
-        config["server"] = f"https://{first_node_ip}:9345"
-    
-    return config
-
-def add_node_specific_config(config, hostname, inventory_data):
-    """Add node-specific labels and taints from inventory."""
-    rke2_config = inventory_data.get('rke2_config', {})
-    
-    # Get node-specific settings from inventory if available
-    node_settings = rke2_config.get('node_settings', {}).get(hostname, {})
-    
-    config["node-label"] = node_settings.get('labels', [
-        "node.kubernetes.io/instance-type=control-plane",
-        f"kubernetes.io/hostname={hostname.lower()}",
-        "workload.type=control-plane"
-    ])
-    
-    config["node-taint"] = node_settings.get('taints', [
-        "CriticalAddonsOnly=true:NoSchedule"
-    ])
-    
-    return config
-
-def generate_config_file(hostname, inventory_data, is_first=False):
-    """Generate complete config for a node using inventory data."""
-    config = generate_base_config(inventory_data, hostname, is_first=is_first)
-    config = add_node_specific_config(config, hostname, inventory_data)
-    return config
-
-def write_config(config, filename):
-    """Write config to file with proper formatting."""
-    with open(filename, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
 def validate_inventory_data(inventory_data):
     """Validate inventory data structure and required fields"""
@@ -77,47 +26,29 @@ def validate_inventory_data(inventory_data):
             current = current[field]
     return True
 
+def write_group_vars(vars_data):
+    """Write variables to group_vars/all.yml"""
+    os.makedirs('inventory/group_vars', exist_ok=True)
+    with open('inventory/group_vars/all.yml', 'w') as f:
+        yaml.dump(vars_data, f, default_flow_style=False)
+
 def main():
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent
+    # Load inventory
+    with open('inventory/rke2.yml', 'r') as f:
+        inventory_data = yaml.safe_load(f)
+
+    # Validate inventory
+    validate_inventory_data(inventory_data)
+
+    # Generate base variables
+    vars_data = generate_base_vars(inventory_data)
+
+    # Write to group_vars
+    write_group_vars(vars_data)
     
-    output_dir = project_root / 'generated_configs'
-    output_dir.mkdir(exist_ok=True)
-    
-    try:
-        # Read and validate inventory
-        inventory_path = project_root / 'inventory' / 'rke2.yml'
-        if not inventory_path.exists():
-            raise FileNotFoundError(f"Inventory file not found at {inventory_path}")
-        
-        inventory_data = read_inventory(inventory_path)
-        validate_inventory_data(inventory_data)
-        
-        # Get list of control plane nodes with their actual hostnames
-        control_plane_nodes = inventory_data['all']['children']['six_node_cluster']['children']['control_plane_nodes']['hosts'].keys()
-        
-        # Create timestamp for this generation run
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Generate config for each node
-        for i, hostname in enumerate(control_plane_nodes):
-            is_first = (i == 0)
-            
-            config = generate_config_file(hostname, inventory_data, is_first=is_first)
-            
-            # Create consistent output filename
-            output_file = output_dir / f"rke2_config_{hostname}_{timestamp}.yaml"
-            
-            write_config(config, output_file)
-            print(f"Generated config file: {output_file}")
-            
-            # Print config for verification
-            print(f"\nGenerated configuration for {hostname}:")
-            print("------------------------")
-            print(yaml.dump(config, default_flow_style=False))
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
+    print(f"\nGenerated group variables in inventory/group_vars/all.yml:")
+    print("------------------------")
+    print(yaml.dump(vars_data))
 
 if __name__ == "__main__":
     main()
