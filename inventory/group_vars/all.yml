@@ -7,16 +7,13 @@ paths:
     bin: /var/lib/rancher/rke2/bin
     config: /etc/rancher/rke2
     data: /var/lib/rancher/rke2
-    kubeconfig: /etc/rancher/rke2/rke2.yaml
   system:
     bin: /usr/local/bin
 rke2_config:
-  write_kubeconfig_mode: "0644"
-  tls_san:
-    - "127.0.0.1"
-    - "localhost"
-    - "kubernetes.default"
-    - "kubernetes.default.svc"
-    - "kubernetes.default.svc.cluster.local"
-  token: "{{ rke2_token | default('') }}"
+  tls-san: &id001
+  - 127.0.0.1
+  - localhost
+  token: ''
+  write_kubeconfig_mode: '0644'
 rke2_token: ''
+tls_san: *id001

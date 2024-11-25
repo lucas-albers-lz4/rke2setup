@@ -1,10 +1,15 @@
+{% if rke2_config.write_kubeconfig_mode is defined %}
 write-kubeconfig-mode: "{{ rke2_config.write_kubeconfig_mode }}"
+{% endif %}
+
+{% if rke2_config.tls_san is defined %}
 tls-san:
 {% for san in rke2_config.tls_san %}
   - {{ san }}
 {% endfor %}
 {% if inventory_hostname in groups['control_plane_nodes'] %}
   - {{ hostvars[inventory_hostname]['ansible_host'] }}
+{% endif %}
 {% endif %}
 
 token: {{ rke2_token }}
@@ -16,14 +21,15 @@ cluster-init: true
 server: https://{{ hostvars[groups['control_plane_nodes'][0]]['ansible_host'] }}:9345
 {% endif %}
 
-node-label:
 {% if inventory_hostname in groups['control_plane_nodes'] %}
+node-label:
   - "node.kubernetes.io/instance-type=control-plane"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=control-plane"
 node-taint:
   - "CriticalAddonsOnly=true:NoSchedule"
 {% else %}
+node-label:
   - "node.kubernetes.io/instance-type=worker"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=mixed"
