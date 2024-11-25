@@ -94,6 +94,7 @@
         port: 22
         timeout: 60
       delegate_to: localhost
+      become: false
 
     - name: Debug reboot status
       debug:
