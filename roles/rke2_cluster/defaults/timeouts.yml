@@ -1,0 +1,17 @@
+---
+# Quick operations
+timeout_short: 30    # 30 seconds for quick checks
+timeout_standard: 60 # 1 minute for standard operations
+
+# Service operations
+timeout_service: 180    # 3 minutes for service operations
+timeout_startup: 300    # 5 minutes for system startup
+
+# System operations
+timeout_reboot: 600     # 10 minutes for reboot operations
+
+# Retry intervals
+retry_delay: 10 # Standard delay between retries
+retry_quick: 3      # Quick operations (3 attempts)
+retry_standard: 6   # Standard operations (6 attempts)
+retry_extended: 30  # Extended operations (30 attempts)
