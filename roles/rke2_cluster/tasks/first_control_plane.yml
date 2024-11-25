@@ -225,3 +225,60 @@
     - name: Fail with message
       fail:
         msg: "First control plane node failed basic readiness check"
+
+- name: Configure firewall for RKE2
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "6443"  # Kubernetes API
+    - "9345"  # RKE2 API
+    - "10250" # Kubelet
+    - "2379"  # etcd
+    - "2380"  # etcd peer
+  when: inventory_hostname == groups['control_plane_nodes'][0]
+
+- name: Wait for RKE2 to be ready on first control plane
+  when: inventory_hostname == groups['control_plane_nodes'][0]
+  block:
+    - name: Check RKE2 service status
+      command: systemctl is-active rke2-server
+      register: rke2_status
+      until: rke2_status.stdout == "active"
+      retries: 6
+      delay: 10
+      
+    - name: Wait for RKE2 node to be ready
+      shell: |
+        timeout 10 /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get nodes {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: node_status
+      until: node_status.stdout == "True"
+      retries: 6
+      delay: 10
+      
+    - name: Verify API endpoint is responding
+      uri:
+        url: "https://{{ hostvars[groups['control_plane_nodes'][0]]['ansible_host'] }}:9345/cacerts"
+        validate_certs: no
+        status_code: 200
+      register: api_check
+      until: api_check.status == 200
+      retries: 6
+      delay: 10
+
+    - name: Set fact for control plane readiness
+      set_fact:
+        control_plane_ready: true
+        rke2_ready:
+          service: "{{ rke2_status }}"
+          node: "{{ node_status }}"
+          api: "{{ api_check }}"
+
+- name: Debug RKE2 status
+  debug:
+    msg: |
+      Service Status: {{ rke2_ready.service.stdout }}
+      Node Status: {{ rke2_ready.node.stdout }}
+      API Status: {{ rke2_ready.api.status }}
+  when: inventory_hostname == groups['control_plane_nodes'][0] and rke2_ready is defined
