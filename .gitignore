@@ -26,3 +26,4 @@ inventory/hosts.txt
 *.j2 text eol=lf
 *.sh text eol=lf
 *.md text eol=lf
+generated_configs/

@@ -1,5 +1,5 @@
-write-kubeconfig-mode: '0644'
-tls-san:
+rke2_token: test123
+tls_san:
 - 127.0.0.1
 - 192.168.1.23
 - 192.168.1.24
@@ -24,12 +24,3 @@ tls-san:
 - node8.home.arpa
 - node9
 - node9.home.arpa
-node-name: k1
-token: test123
-cluster-init: true
-node-label:
-- node.kubernetes.io/instance-type=control-plane
-- kubernetes.io/hostname=k1
-- workload.type=control-plane
-node-taint:
-- CriticalAddonsOnly=true:NoSchedule
