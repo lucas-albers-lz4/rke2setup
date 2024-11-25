@@ -8,12 +8,21 @@
         expected_ip: "{{ ansible_host }}"
 
     - name: Get all IP addresses
-      ansible.builtin.set_fact:
-        real_ips: "{{ ansible_all_ipv4_addresses | select('match', '^(?!127\\.).*') | list }}"
+      # Exclude 10.42.x.x (RKE2's internal cluster network) and loopback addresses
+      # - 10.42.0.0/16 is RKE2's default cluster CIDR for pod networking
+      # - Including these IPs would cause false positive conflict detection
+      # - We only care about the host's primary network interfaces
+      ansible.builtin.shell: |
+        ip addr show | grep -w inet | awk '{print $2}' | cut -d'/' -f1 | grep -v '^10.42' | grep -v '^127.'
+      register: real_ips
+      changed_when: false
 
-    - name: Check for IP conflicts
+    - name: Set fact for IP conflicts
       ansible.builtin.set_fact:
-        ip_conflicts: "{{ 'Not Detected' if (real_ips | length) == 1 else 'Detected' }}"
+        ip_conflicts: "{{ 'Not Detected' if 
+          (ansible_host in real_ips.stdout_lines) and 
+          (real_ips.stdout_lines | select('match', '^192.168') | list | length == 1)
+          else 'Detected' }}"
 
     - name: Get hosts file content
       ansible.builtin.command: cat /etc/hosts
@@ -41,14 +50,14 @@
           - "Host: {{ inventory_hostname }}"
           - "System Hostname: {{ ansible_hostname }}"
           - "Expected IP: {{ expected_ip }}"
-          - "All IPs: {{ real_ips | join(', ') }}"
+          - "All IPs: {{ real_ips.stdout_lines | join(', ') }}"
           - "=== /etc/hosts content ==="
           - "{{ hosts_file.stdout }}"
           - "=== DNS Resolution Details ==="
           - "{{ dns_details.stdout }}"
           - "IP Conflicts: {{ ip_conflicts }}"
           - "Status: {{ 'PASS' if (ansible_hostname | lower == inventory_hostname | lower) and 
-                                (expected_ip in real_ips) and 
+                                (expected_ip in real_ips.stdout_lines) and 
                                 (dns_details.rc == 0) and 
                                 (ip_conflicts == 'Not Detected')
                       else 'FAIL' }}"
@@ -70,4 +79,4 @@
         ip_conflicts == 'Detected' or
         dns_details.rc != 0 or
         ansible_hostname | lower != inventory_hostname | lower or
-        expected_ip not in real_ips
+        expected_ip not in real_ips.stdout_lines

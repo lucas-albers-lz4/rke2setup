@@ -1,0 +1,69 @@
+---
+- name: Ensure kubectl directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /root/.kube
+    - /home/{{ ansible_user }}/.kube
+
+- name: Create symlinks for kubectl config
+  ansible.builtin.file:
+    src: /etc/rancher/rke2/rke2.yaml
+    dest: "{{ item }}"
+    state: link
+    force: true
+  loop:
+    - /root/.kube/config
+    - /home/{{ ansible_user }}/.kube/config
+
+- name: Set KUBECONFIG environment variable
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    line: 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml'
+    regexp: '^export KUBECONFIG='
+    create: yes
+  loop:
+    - /root/.bashrc
+    - /home/{{ ansible_user }}/.bashrc
+
+- name: Create kubectl symlink
+  ansible.builtin.file:
+    src: /var/lib/rancher/rke2/bin/kubectl
+    dest: /usr/local/bin/kubectl
+    state: link
+    force: true
+
+- name: Verify kubectl configuration
+  ansible.builtin.stat:
+    path: /etc/rancher/rke2/rke2.yaml
+  register: kubeconfig_stat
+
+- name: Fail if kubeconfig doesn't exist
+  ansible.builtin.fail:
+    msg: "RKE2 kubeconfig not found at /etc/rancher/rke2/rke2.yaml"
+  when: not kubeconfig_stat.stat.exists
+
+- name: Verify cluster status
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+  block:
+    - name: Check node status
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodes_status
+      changed_when: false
+
+    - name: Check control plane pods
+      ansible.builtin.command: kubectl get pods -n kube-system -l tier=control-plane -o wide
+      register: control_plane_pods
+      changed_when: false
+
+    - name: Display cluster status
+      ansible.builtin.debug:
+        msg:
+          - "Nodes Status:"
+          - "{{ nodes_status.stdout_lines }}"
+          - ""
+          - "Control Plane Pods:"
+          - "{{ control_plane_pods.stdout_lines }}"
