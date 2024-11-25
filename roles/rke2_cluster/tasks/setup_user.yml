@@ -1,0 +1,42 @@
+---
+- name: Include user validation
+  ansible.builtin.include_tasks: validate_user.yml
+
+- name: Create user directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ paths.user.kube }}", mode: "{{ file_modes.directory.default }}" }
+    - { path: "{{ paths.user.ssh }}", mode: "{{ file_modes.directory.secure }}" }
+    - { path: "{{ paths.base.system.root.kube }}", mode: "{{ file_modes.directory.default }}" }
+
+- name: Configure kubeconfig access
+  ansible.builtin.file:
+    src: "{{ paths.base.rke2.kubeconfig }}"
+    dest: "{{ item }}"
+    state: link
+    force: true
+  loop:
+    - "{{ paths.user.config }}"
+    - "{{ paths.base.system.root.config }}"
+
+- name: Configure environment
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    line: "export KUBECONFIG={{ paths.base.rke2.kubeconfig }}"
+    regexp: '^export KUBECONFIG='
+    create: yes
+  loop:
+    - "{{ paths.user.bashrc }}"
+    - "{{ paths.base.system.root.bashrc }}"
+
+- name: Create kubectl symlink
+  ansible.builtin.file:
+    src: "{{ paths.base.rke2.bin }}/kubectl"
+    dest: "{{ paths.base.system.bin }}/kubectl"
+    state: link
+    force: true
