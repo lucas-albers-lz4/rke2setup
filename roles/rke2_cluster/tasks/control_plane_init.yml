@@ -1,0 +1,60 @@
+---
+- name: Verify control plane prerequisites
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Initialize control plane state
+  ansible.builtin.set_fact:
+    control_plane_initialized: false
+    etcd_ready: false
+    api_server_ready: false
+
+- name: Configure first control plane node
+  block:
+    - name: Include first control plane tasks
+      ansible.builtin.include_tasks: first_control_plane.yml
+      when: inventory_hostname == groups['control_plane_nodes'][0]
+
+    - name: Wait for first control plane to be ready
+      ansible.builtin.wait_for:
+        timeout: 30
+      when: inventory_hostname != groups['control_plane_nodes'][0]
+
+    - name: Configure additional control plane nodes
+      ansible.builtin.include_tasks: additional_control_planes.yml
+      when: 
+        - inventory_hostname != groups['control_plane_nodes'][0]
+        - inventory_hostname in groups['control_plane_nodes']
+
+- name: Validate control plane health
+  block:
+    - name: Check etcd cluster health
+      ansible.builtin.shell: |
+        {{ paths.rke2.bin }}/kubectl get --raw=/healthz/etcd
+      register: etcd_health
+      until: etcd_health.stdout == "ok"
+      retries: 30
+      delay: 10
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      when: inventory_hostname == groups['control_plane_nodes'][0]
+
+    - name: Verify all control plane nodes are ready
+      ansible.builtin.shell: |
+        READY_CP=$({{ paths.rke2.bin }}/kubectl get nodes --selector=node.kubernetes.io/instance-type=control-plane \
+          -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{end}' | grep -c True)
+        TOTAL_CP={{ groups['control_plane_nodes'] | length }}
+        test "$READY_CP" -eq "$TOTAL_CP"
+      register: cp_status
+      until: cp_status.rc == 0
+      retries: 30
+      delay: 10
+      when: inventory_hostname == groups['control_plane_nodes'][0]
+
+    - name: Set control plane initialization complete
+      ansible.builtin.set_fact:
+        control_plane_initialized: true
+      when: inventory_hostname == groups['control_plane_nodes'][0]
+
+- name: Verify control plane configuration
+  ansible.builtin.include_tasks: validate_control_plane.yml
+  when: inventory_hostname == groups['control_plane_nodes'][0]

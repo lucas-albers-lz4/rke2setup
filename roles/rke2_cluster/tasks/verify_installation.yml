@@ -23,7 +23,8 @@
       register: rke2_files
 
     - name: Verify all required files exist
-      assert:
-        that: "{{ rke2_files.results | json_query('[*].stat.exists') | all }}"
-        fail_msg: "Missing required RKE2 files: {{ rke2_files.results | json_query('[?!stat.exists].item') }}"
+      ansible.builtin.assert:
+        that:
+          - rke2_files.results | map(attribute='stat.exists') | select('true') | list | length == rke2_files.results | length
         success_msg: "All required RKE2 files are present"
+        fail_msg: "Some required RKE2 files are missing"

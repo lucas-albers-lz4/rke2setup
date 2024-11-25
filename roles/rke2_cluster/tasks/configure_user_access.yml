@@ -1,26 +1,26 @@
 ---
 - name: Wait for kubeconfig to be generated
   wait_for:
-    path: /etc/rancher/rke2/rke2.yaml
+    path: "{{ paths.rke2.kubeconfig }}"
     state: present
     timeout: 300
   register: kubeconfig_file
 
-- name: Create .kube directory for ubuntu user
+- name: Create .kube directory for user
   ansible.builtin.file:
-    path: /home/ubuntu/.kube
+    path: "{{ paths.user.kube_dir }}"
     state: directory
-    owner: ubuntu
-    group: ubuntu
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0755'
 
 - name: Copy kubeconfig to user directory
   copy:
-    src: /etc/rancher/rke2/rke2.yaml
-    dest: /home/ubuntu/.kube/config
+    src: "{{ paths.rke2.kubeconfig }}"
+    dest: "{{ paths.user.kubeconfig }}"
     remote_src: yes
-    owner: ubuntu
-    group: ubuntu
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0600'
   when: kubeconfig_file.stat.exists
 

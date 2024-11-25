@@ -14,7 +14,6 @@
           Passwordless sudo is not configured correctly for user {{ ansible_user }}.
           Please ensure the following line exists in /etc/sudoers.d/{{ ansible_user }}:
           {{ ansible_user }} ALL=(ALL) NOPASSWD:ALL
-        success_msg: "Passwordless sudo is configured correctly"
 
     - name: Check sudo secure_path
       ansible.builtin.command: sudo -n grep secure_path /etc/sudoers
