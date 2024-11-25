@@ -1,4 +1,4 @@
-.PHONY: test generate clean help verify cleanup reboot setup-control setup-workers setup-cluster verify-cluster deploy-workflow configure-kubectl verify-kubectl
+.PHONY: test generate clean help verify cleanup reboot setup-control setup-workers setup-cluster verify-cluster deploy-workflow configure-kubectl verify-kubectl verify-all-hosts verify-control-hosts verify-worker-hosts
 
 # Default target
 .DEFAULT_GOAL := help
@@ -25,24 +25,30 @@ generate-configs:  ## Generate RKE2 configs from inventory
 
 generate: generate-inventory generate-configs  ## Generate both inventory and configs
 
-verify:  ## Verify host connectivity and configuration
+verify-all-hosts:  ## Verify all hosts connectivity and configuration
 	$(ANSIBLE) -i $(INVENTORY_YML) verify_hosts.yml
 
+verify-control-hosts:  ## Verify control plane hosts connectivity and configuration
+	$(ANSIBLE) -i $(INVENTORY_YML) verify_hosts.yml --limit control_plane_nodes
+
+verify-worker-hosts:  ## Verify worker hosts connectivity and configuration
+	$(ANSIBLE) -i $(INVENTORY_YML) verify_hosts.yml --limit worker_nodes
+
 setup-control: generate  ## Setup control plane nodes with kubectl access
-	$(ANSIBLE) -i $(INVENTORY_YML) site.yml --limit control_plane_nodes
+	$(ANSIBLE) -i $(INVENTORY_YML) rke2.yml --limit control_plane_nodes
 	$(MAKE) configure-kubectl
 	$(MAKE) verify-kubectl
 
 setup-workers:  ## Setup worker nodes
-	$(ANSIBLE) -i $(INVENTORY_YML) site.yml --limit worker_nodes
+	$(ANSIBLE) -i $(INVENTORY_YML) rke2.yml --limit worker_nodes
 
 setup-cluster: setup-control setup-workers  ## Setup entire cluster (control plane first, then workers)
 
 cleanup:  ## Clean up hosts (remove RKE2, configs, etc.)
-	$(ANSIBLE) -i $(INVENTORY_YML) cleanup.yml --tags cleanup
+	$(ANSIBLE) -i $(INVENTORY_YML) cleanup.yml
 
 reboot:  ## Reboot all hosts
-	$(ANSIBLE) -i $(INVENTORY_YML) cleanup.yml --tags reboot
+	$(ANSIBLE) -i $(INVENTORY_YML) reboot.yml 
 
 clean:  ## Clean generated files
 	rm -rf $(OUTPUT_DIR)/*
