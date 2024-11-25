@@ -186,13 +186,10 @@ def test_worker_node_config(sample_inventory):
 
 def render_template(test_vars):
     """Helper function to render the config template with test variables."""
-    # Ensure rke2_config is available to template
-    if 'rke2_config' not in test_vars:
-        test_vars['rke2_config'] = {
-            'write_kubeconfig_mode': '0644',
-            'token': test_vars.get('rke2_token', ''),
-            'tls-san': test_vars.get('tls_san', [])
-        }
+    # Ensure rke2_config is properly structured
+    if 'rke2_config' in test_vars:
+        test_vars['rke2_token'] = test_vars['rke2_config'].get('token', '')
+        test_vars['tls_san'] = test_vars['rke2_config'].get('tls-san', [])
     
     template_path = os.path.join(
         os.path.dirname(__file__), 
@@ -201,3 +198,97 @@ def render_template(test_vars):
     with open(template_path) as f:
         template = Environment(loader=FileSystemLoader('/')).from_string(f.read())
     return template.render(**test_vars)
+
+def test_rke2_config_defaults():
+    """Test default RKE2 configuration generation"""
+    minimal_inventory = {
+        'all': {
+            'children': {
+                'six_node_cluster': {
+                    'children': {
+                        'control_plane_nodes': {
+                            'hosts': {
+                                'k1': {'ansible_host': '192.168.1.23'}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    vars_data = generate_base_vars(minimal_inventory)
+    assert 'rke2_config' in vars_data
+    assert vars_data['rke2_config']['write_kubeconfig_mode'] == '0644'
+    assert isinstance(vars_data['rke2_config']['tls-san'], list)
+
+def test_invalid_inventory_structure():
+    """Test handling of invalid inventory structure"""
+    invalid_inventory = {
+        'all': {
+            'children': {
+                'wrong_group': {}
+            }
+        }
+    }
+    
+    with pytest.raises(ValueError) as exc_info:
+        validate_inventory_data(invalid_inventory)
+    assert "Missing required field" in str(exc_info.value)
+
+def test_template_rendering_with_minimal_config():
+    """Test template rendering with minimal configuration"""
+    minimal_config = {
+        'inventory_hostname': 'k1',
+        'groups': {
+            'control_plane_nodes': ['k1']
+        },
+        'hostvars': {
+            'k1': {'ansible_host': '192.168.1.23'}
+        },
+        'rke2_config': {
+            'write_kubeconfig_mode': '0644',
+            'token': 'test123',
+            'tls-san': ['127.0.0.1']
+        },
+        'rke2_token': 'test123'
+    }
+    
+    rendered = render_template(minimal_config)
+    assert 'write-kubeconfig-mode: \'0644\'' in rendered
+    assert 'cluster-init: true' in rendered
+    assert 'token: test123' in rendered
+
+def test_generate_rke2_configs_with_custom_paths():
+    """Test RKE2 configuration generation with custom paths"""
+    inventory_data = {
+        'paths': {
+            'rke2': {
+                'config': '/custom/path/rke2',
+                'bin': '/custom/path/bin',
+                'data': '/custom/path/data'
+            }
+        }
+    }
+    vars_data = generate_base_vars(inventory_data)
+    assert vars_data['paths']['rke2']['config'] == '/custom/path/rke2'
+    assert vars_data['paths']['rke2']['bin'] == '/custom/path/bin'
+    assert vars_data['paths']['rke2']['data'] == '/custom/path/data'
+
+def test_generate_rke2_configs_with_custom_commands():
+    """Test RKE2 configuration generation with custom commands"""
+    inventory_data = {
+        'commands': {
+            'rke2': '/custom/path/to/rke2'
+        }
+    }
+    vars_data = generate_base_vars(inventory_data)
+    assert vars_data['commands']['rke2'] == '/custom/path/to/rke2'
+
+def test_generate_rke2_configs_with_empty_inventory():
+    """Test RKE2 configuration generation with empty inventory"""
+    vars_data = generate_base_vars({})
+    assert 'paths' in vars_data
+    assert 'commands' in vars_data
+    assert 'rke2_config' in vars_data
+    assert vars_data['rke2_config']['write_kubeconfig_mode'] == '0644'
