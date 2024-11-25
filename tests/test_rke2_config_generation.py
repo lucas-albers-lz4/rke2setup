@@ -255,7 +255,7 @@ def test_template_rendering_with_minimal_config():
     }
     
     rendered = render_template(minimal_config)
-    assert 'write-kubeconfig-mode: \'0644\'' in rendered
+    assert 'write-kubeconfig-mode: "0644"' in rendered
     assert 'cluster-init: true' in rendered
     assert 'token: test123' in rendered
 
