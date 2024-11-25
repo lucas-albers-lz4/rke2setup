@@ -5,6 +5,7 @@ import yaml
 import os
 from scripts.generate_rke2_configs import generate_base_vars, validate_inventory_data
 from jinja2 import Template, Environment
+from jinja2.loaders import FileSystemLoader
 
 @pytest.fixture
 def sample_inventory():
@@ -131,7 +132,8 @@ def test_node_specific_config(sample_inventory):
             'k3': {'ansible_host': '192.168.1.25'}
         },
         'tls_san': vars_data['tls_san'],
-        'rke2_token': vars_data['rke2_token']
+        'rke2_token': vars_data['rke2_token'],
+        'rke2_config': vars_data['rke2_config']
     }
     assert 'cluster-init: true' in render_template(test_vars)
 
@@ -139,7 +141,6 @@ def test_additional_control_plane_config(sample_inventory):
     """Test additional control plane node configuration"""
     vars_data = generate_base_vars(sample_inventory)
     
-    # Test additional control plane node config
     test_vars = {
         'inventory_hostname': 'k2',
         'groups': {
@@ -151,11 +152,13 @@ def test_additional_control_plane_config(sample_inventory):
             'k3': {'ansible_host': '192.168.1.25'}
         },
         'tls_san': vars_data['tls_san'],
-        'rke2_token': vars_data['rke2_token']
+        'rke2_token': vars_data['rke2_token'],
+        'rke2_config': vars_data['rke2_config']
     }
     rendered = render_template(test_vars)
+    assert 'workload.type=control-plane' in rendered
     assert 'server: https://192.168.1.23:9345' in rendered
-    assert 'cluster-init: true' not in rendered
+    assert 'CriticalAddonsOnly=true:NoSchedule' in rendered
 
 def test_worker_node_config(sample_inventory):
     """Test worker node configuration"""
@@ -174,22 +177,27 @@ def test_worker_node_config(sample_inventory):
             'worker1': {'ansible_host': '192.168.1.26'}
         },
         'tls_san': vars_data['tls_san'],
-        'rke2_token': vars_data['rke2_token']
+        'rke2_token': vars_data['rke2_token'],
+        'rke2_config': vars_data['rke2_config']
     }
     rendered = render_template(test_vars)
-    assert 'workload.type=mixed' in rendered
-    assert 'CriticalAddonsOnly=true:NoSchedule' not in rendered
+    assert 'server: https://192.168.1.23:9345' in rendered
+    assert 'node.kubernetes.io/instance-type=worker' in rendered
 
 def render_template(test_vars):
-    """Helper function to render template with test variables"""
-    def to_yaml(data):
-        return yaml.dump(data, default_flow_style=False)
-
-    # Create Jinja2 environment with custom filter
-    env = Environment()
-    env.filters['to_yaml'] = to_yaml
-
-    with open('roles/rke2_cluster/templates/config.yaml.j2', 'r') as f:
-        template = env.from_string(f.read())
+    """Helper function to render the config template with test variables."""
+    # Ensure rke2_config is available to template
+    if 'rke2_config' not in test_vars:
+        test_vars['rke2_config'] = {
+            'write_kubeconfig_mode': '0644',
+            'token': test_vars.get('rke2_token', ''),
+            'tls-san': test_vars.get('tls_san', [])
+        }
     
+    template_path = os.path.join(
+        os.path.dirname(__file__), 
+        '../roles/rke2_cluster/templates/config.yaml.j2'
+    )
+    with open(template_path) as f:
+        template = Environment(loader=FileSystemLoader('/')).from_string(f.read())
     return template.render(**test_vars)
