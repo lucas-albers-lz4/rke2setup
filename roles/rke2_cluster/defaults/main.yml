@@ -136,3 +136,15 @@ file_modes:
   file:
     default: '0644'
     secure: '0600'
+
+# Default RKE2 configuration if not specified in group_vars
+rke2_config:
+  write_kubeconfig_mode: '0644'
+  token: ''  # Will be generated if not provided
+  tls-san:
+    - "127.0.0.1"
+    - "localhost"
+    - "kubernetes"
+    - "kubernetes.default"
+    - "kubernetes.default.svc"
+    - "kubernetes.default.svc.cluster.local"
