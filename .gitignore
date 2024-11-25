@@ -27,3 +27,4 @@ inventory/hosts.txt
 *.sh text eol=lf
 *.md text eol=lf
 generated_configs/
+.coverage
