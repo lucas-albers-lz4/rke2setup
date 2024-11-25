@@ -1,0 +1,44 @@
+---
+- name: Configure kubectl access
+  hosts: control_plane_nodes
+  gather_facts: true
+  become: true
+  
+  tasks:
+    - name: Ensure kubectl directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      loop:
+        - "{{ paths.user.kube_dir }}"
+        - /root/.kube
+
+    - name: Create symlinks for kubectl config
+      ansible.builtin.file:
+        src: "{{ paths.rke2.kubeconfig }}"
+        dest: "{{ item }}"
+        state: link
+        force: true
+      loop:
+        - "{{ paths.user.kubeconfig }}"
+        - /root/.kube/config
+
+    - name: Set KUBECONFIG environment variable
+      ansible.builtin.lineinfile:
+        path: "{{ item }}"
+        line: 'export KUBECONFIG={{ paths.rke2.kubeconfig }}'
+        regexp: '^export KUBECONFIG='
+        create: yes
+      loop:
+        - "{{ paths.user.home }}/.bashrc"
+        - /root/.bashrc
+
+    - name: Create kubectl symlink
+      ansible.builtin.file:
+        src: "{{ paths.rke2.bin }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        state: link
+        force: true
