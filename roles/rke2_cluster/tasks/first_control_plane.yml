@@ -56,6 +56,9 @@
     src: config.yaml.j2
     dest: "{{ paths.rke2.config }}/config.yaml"
     mode: '0644'
+  vars:
+    tls_san: "{{ rke2_config['tls-san'] }}"
+    token: "{{ rke2_config.token }}"
   become: true
 
 - name: Download RKE2 installation script
@@ -136,7 +139,7 @@
 
 - name: Create .kube directory
   ansible.builtin.file:
-    path: "{{ paths.user.kube_dir }}"
+    path: "{{ paths.user.kube }}"
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -145,11 +148,12 @@
 - name: Copy kubeconfig
   ansible.builtin.copy:
     src: "{{ paths.rke2.kubeconfig }}"
-    dest: "{{ paths.user.kubeconfig }}"
-    remote_src: true
+    dest: "{{ paths.user.config }}"
+    remote_src: yes
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: '0600'
+  when: kubectl_binary.stat is defined
 
 - name: Debug token generation process
   block:
@@ -170,10 +174,11 @@
     rule: allow
     port: "{{ item }}"
     proto: tcp
-  with_items:
-    - 6443  # Kubernetes API
-    - 2379  # etcd client
-    - 2380  # etcd peer
+  become: true
+  loop:
+    - 6443
+    - 2379
+    - 2380
 
 - name: Wait for token to be available
   ansible.builtin.wait_for:
@@ -192,3 +197,31 @@
     state: present
     timeout: 300
   register: kubeconfig_file
+
+- name: Simple verification of first control plane
+  block:
+    - name: Wait briefly for RKE2 to initialize
+      wait_for:
+        timeout: 30
+      
+    - name: Check node status
+      shell: |
+        export KUBECONFIG={{ paths.rke2.kubeconfig }}
+        {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname }} --no-headers
+      register: node_check
+      until: '"Ready" in node_check.stdout'
+      retries: 3
+      delay: 10
+      changed_when: false
+  rescue:
+    - name: Show recent logs on failure
+      shell: journalctl -u rke2-server -n 20
+      register: logs
+      
+    - name: Display logs
+      debug:
+        var: logs.stdout_lines
+        
+    - name: Fail with message
+      fail:
+        msg: "First control plane node failed basic readiness check"

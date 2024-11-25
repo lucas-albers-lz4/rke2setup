@@ -1,10 +1,10 @@
-write-kubeconfig-mode: '0644'
+write-kubeconfig-mode: '{{ rke2_config.write_kubeconfig_mode }}'
 tls-san:
-{% for san in tls_san %}
+{% for san in rke2_config['tls-san'] %}
   - {{ san }}
 {% endfor %}
 node-name: {{ inventory_hostname }}
-token: {{ rke2_token }}
+token: {{ rke2_config.token }}
 {% if inventory_hostname == groups['control_plane_nodes'][0] %}
 cluster-init: true
 {% else %}

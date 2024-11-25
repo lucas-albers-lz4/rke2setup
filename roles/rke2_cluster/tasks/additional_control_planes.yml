@@ -12,19 +12,83 @@
   ansible.builtin.template:
     src: config.yaml.j2
     dest: /etc/rancher/rke2/config.yaml
-    mode: '0600'
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:
     url: https://get.rke2.io
     dest: /tmp/rke2-install.sh
     mode: '0755'
-  register: rke2_installer
+  become: true
 
 - name: Install RKE2 server
-  shell: |
-    INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
-  register: install_result
+  block:
+    - name: Execute installation script
+      shell: |
+        INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
+      become: true
+      register: install_result
+
+    - name: Start RKE2 service
+      systemd:
+        name: rke2-server
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      become: true
+
+    - name: Wait for RKE2 to initialize
+      wait_for:
+        timeout: 30
+
+    - name: Ensure RKE2 directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      become: true
+      loop:
+        - /var/lib/rancher/rke2/bin
+        - /usr/local/bin
+        - /etc/rancher/rke2
+
+    - name: Wait for critical files
+      wait_for:
+        path: "{{ item }}"
+        state: present
+        timeout: 60
+      loop:
+        - /var/lib/rancher/rke2/bin/kubectl
+        - /usr/local/bin/rke2
+      register: file_wait
+  rescue:
+    - name: Collect debug information
+      block:
+        - name: Get service status
+          command: systemctl status rke2-server --no-pager
+          become: true
+          register: service_status
+          ignore_errors: yes
+
+        - name: Get installation logs
+          command: journalctl -u rke2-server --no-pager -n 20
+          become: true
+          register: install_logs
+          ignore_errors: yes
+
+        - name: Display debug information
+          debug:
+            msg:
+              - "Installation Result: {{ install_result | default('N/A') }}"
+              - "Service Status: {{ service_status.stdout_lines | default([]) }}"
+              - "Install Logs: {{ install_logs.stdout_lines | default([]) }}"
+              
+        - name: Fail with detailed message
+          fail:
+            msg: "RKE2 installation failed. Check the debug information above."
 
 - name: Verify RKE2 installation
   include_tasks: verify_installation.yml

@@ -22,6 +22,25 @@
         var: rke2_logs.stdout_lines
 
 - name: Check service initialization
-  shell: |
-    echo -e "\n=== Service Initialization Details ===" >> /tmp/rke2-diagnostics.log
-    systemctl show rke2-server --property=StatusText,LoadState,ActiveState >> /tmp/rke2-diagnostics.log
+  block:
+    - name: Create diagnostics directory with proper permissions
+      file:
+        path: /tmp/rke2-diagnostics
+        state: directory
+        mode: '0777'
+      become: true
+
+    - name: Collect service initialization details
+      shell: |
+        systemctl show rke2-server --property=StatusText,LoadState,ActiveState > /tmp/rke2-diagnostics/status.log
+      become: true
+      register: service_init
+
+    - name: Display service initialization details
+      command: cat /tmp/rke2-diagnostics/status.log
+      become: true
+      register: init_details
+
+    - name: Show initialization details
+      debug:
+        msg: "{{ init_details.stdout_lines }}"
