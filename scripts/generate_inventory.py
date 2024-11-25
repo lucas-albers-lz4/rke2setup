@@ -81,42 +81,36 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     
     return control_plane_nodes, worker_nodes
 
-def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> Dict:
-    """Generate inventory structure."""
+def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> dict:
+    """Generate inventory dictionary from node information."""
     inventory = {
         'all': {
             'children': {
                 'six_node_cluster': {
                     'children': {
-                        'control_plane_nodes': {
-                            'hosts': {}
-                        },
-                        'worker_nodes': {
-                            'hosts': {}
-                        }
+                        'control_plane_nodes': {'hosts': {}},
+                        'worker_nodes': {'hosts': {}}
                     }
                 }
             },
-            'vars': {
-                'ansible_python_interpreter': '/usr/bin/python3',
-                'ansible_ssh_common_args': '-o StrictHostKeyChecking=no',
-                'ansible_user': 'ubuntu'
-            }
+            'vars': {}
+        },
+        'rke2_config': {  # Move RKE2-specific config here
+            'write_kubeconfig_mode': '0644',
+            'token': 'test123',
+            'tls-san': generate_tls_sans(control_plane_nodes, worker_nodes),  # Note: changed from tls_sans to tls-san
+            'control_plane_nodes': [ip for _, ip in control_plane_nodes]
         }
     }
-
+    
     # Add control plane nodes
     for hostname, ip in control_plane_nodes:
-        inventory['all']['children']['six_node_cluster']['children']['control_plane_nodes']['hosts'][hostname] = {
-            'ansible_host': ip
-        }
-
+        inventory['all']['children']['six_node_cluster']['children']['control_plane_nodes']['hosts'][hostname] = {'ansible_host': ip}
+    
     # Add worker nodes
     for hostname, ip in worker_nodes:
-        inventory['all']['children']['six_node_cluster']['children']['worker_nodes']['hosts'][hostname] = {
-            'ansible_host': ip
-        }
-
+        inventory['all']['children']['six_node_cluster']['children']['worker_nodes']['hosts'][hostname] = {'ansible_host': ip}
+    
     return inventory
 
 def generate_tls_sans(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> List[str]:
@@ -156,10 +150,6 @@ def main():
     try:
         control_plane_nodes, worker_nodes = parse_hosts_file(args.hosts_file)
         inventory = generate_inventory(control_plane_nodes, worker_nodes)
-        
-        # Generate TLS SANs and add to inventory vars
-        tls_sans = generate_tls_sans(control_plane_nodes, worker_nodes)
-        inventory['all']['vars']['tls_sans'] = tls_sans
         
         # Ensure inventory directory exists
         output_path = Path(args.output)
