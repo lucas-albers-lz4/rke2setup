@@ -1,0 +1,7 @@
+---
+# Timeout and retry configurations
+retry_delay: 10
+retry_standard: 6
+timeout_standard: 60
+timeout_reboot: 600
+timeout_connection: 30
