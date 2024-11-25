@@ -82,67 +82,29 @@ def parse_hosts_file(hosts_file: str) -> tuple[List[tuple], List[tuple]]:
     return control_plane_nodes, worker_nodes
 
 def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> dict:
-    """Generate inventory dictionary from node information."""
-    inventory = {
+    """Generate only host inventory structure without RKE2 config."""
+    return {
         'all': {
             'children': {
                 'six_node_cluster': {
                     'children': {
-                        'control_plane_nodes': {'hosts': {}},
-                        'worker_nodes': {'hosts': {}}
+                        'control_plane_nodes': {
+                            'hosts': {
+                                hostname: {'ansible_host': ip}
+                                for hostname, ip in control_plane_nodes
+                            }
+                        },
+                        'worker_nodes': {
+                            'hosts': {
+                                hostname: {'ansible_host': ip}
+                                for hostname, ip in worker_nodes
+                            }
+                        }
                     }
                 }
-            },
-            'vars': {
-                'ansible_user': 'ubuntu',
-                'ansible_python_interpreter': '/usr/bin/python3',
-                'ansible_ssh_common_args': '-o StrictHostKeyChecking=no'
             }
-        },
-        'rke2_config': {
-            'write_kubeconfig_mode': '0644',
-            'token': 'test123',
-            'tls-san': generate_tls_sans(control_plane_nodes, worker_nodes),
-            'control_plane_nodes': [ip for _, ip in control_plane_nodes]
         }
     }
-    
-    # Add control plane nodes
-    for hostname, ip in control_plane_nodes:
-        inventory['all']['children']['six_node_cluster']['children']['control_plane_nodes']['hosts'][hostname] = {'ansible_host': ip}
-    
-    # Add worker nodes
-    for hostname, ip in worker_nodes:
-        inventory['all']['children']['six_node_cluster']['children']['worker_nodes']['hosts'][hostname] = {'ansible_host': ip}
-    
-    return inventory
-
-def generate_tls_sans(control_plane_nodes: List[tuple], worker_nodes: List[tuple]) -> List[str]:
-    """Generate TLS SANs from node information."""
-    tls_sans = set([
-        # Kubernetes system names
-        "kubernetes",
-        "kubernetes.default",
-        "kubernetes.default.svc",
-        "kubernetes.default.svc.cluster.local",
-        # Local access
-        "localhost",
-        "127.0.0.1"
-    ])
-    
-    # Add control plane nodes
-    for hostname, ip in control_plane_nodes:
-        tls_sans.add(hostname)
-        tls_sans.add(f"{hostname}.home.arpa")
-        tls_sans.add(ip)
-    
-    # Add worker nodes
-    for hostname, ip in worker_nodes:
-        tls_sans.add(hostname)
-        tls_sans.add(f"{hostname}.home.arpa")
-        tls_sans.add(ip)
-    
-    return sorted(list(tls_sans))
 
 def main():
     parser = argparse.ArgumentParser(description='Generate RKE2 cluster inventory')
