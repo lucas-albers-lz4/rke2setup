@@ -9,26 +9,10 @@
   become: true
 
 - name: Configure additional control plane nodes
-  block:
-    - name: Ensure token is defined
-      ansible.builtin.assert:
-        that:
-          - rke2_token is defined
-          - rke2_token | length > 0
-        fail_msg: "RKE2 token must be defined for additional control plane nodes"
-
-    - name: Configure RKE2 for additional control planes
-      ansible.builtin.template:
-        src: config.yaml.j2
-        dest: /etc/rancher/rke2/config.yaml
-        mode: '0600'
-  rescue:
-    - name: Debug token information
-      ansible.builtin.debug:
-        msg: 
-          - "Inventory Hostname: {{ inventory_hostname }}"
-          - "Defined Variables: {{ hostvars[inventory_hostname] }}"
-      failed_when: true
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    mode: '0600'
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:

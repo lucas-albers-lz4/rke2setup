@@ -33,7 +33,7 @@
 
 - name: Update kubeconfig server address
   ansible.builtin.replace:
-    path: /home/ubuntu/.kube/config
+    path: "{{ paths.user.kubeconfig }}"
     regexp: 'server: https://127.0.0.1:6443'
     replace: 'server: https://{{ first_server_ip }}:6443'
   when: inventory_hostname != groups['control_plane_nodes'][0]

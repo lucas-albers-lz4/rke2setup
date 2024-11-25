@@ -1,16 +1,29 @@
 ---
+- name: Setup user environment
+  ansible.builtin.include_tasks: setup_user.yml
+  tags: [user, config]
+
 - name: Setup control plane nodes
   ansible.builtin.include_tasks: control_plane_init.yml
   when: inventory_hostname in groups['control_plane_nodes']
+  tags: [control-plane]
+
+- name: Configure cluster access
+  ansible.builtin.include_tasks: configure_access.yml
+  when: inventory_hostname in groups['control_plane_nodes']
+  tags: [config, access]
 
 - name: Verify cluster status
   ansible.builtin.include_tasks: verify_cluster.yml
   when: inventory_hostname == groups['control_plane_nodes'][0]
+  tags: [verify]
 
 - name: Configure user access
   ansible.builtin.include_tasks: configure_user_access.yml
   when: inventory_hostname in groups['control_plane_nodes']
+  tags: [user, access]
 
 - name: Validate control plane
   ansible.builtin.include_tasks: validate_control_plane.yml
   when: inventory_hostname == groups['control_plane_nodes'][0]
+  tags: [validate]
