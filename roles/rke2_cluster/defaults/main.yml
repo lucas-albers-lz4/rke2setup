@@ -7,15 +7,25 @@ first_server_ip: ""
 
 # Installation Paths
 paths:
-  rke2:
-    config: /etc/rancher/rke2
-    data: /var/lib/rancher/rke2
-    bin: /var/lib/rancher/rke2/bin
-    kubeconfig: /etc/rancher/rke2/rke2.yaml
-    binary: /usr/local/bin/rke2
+  base:
+    rke2:
+      config: /etc/rancher/rke2
+      data: /var/lib/rancher/rke2
+      bin: /var/lib/rancher/rke2/bin
+      kubeconfig: /etc/rancher/rke2/rke2.yaml
+    system:
+      bin: /usr/local/bin
+      root:
+        home: /root
+        kube: /root/.kube
+        config: /root/.kube/config
+        bashrc: /root/.bashrc
   user:
-    kube_dir: "{{ ansible_user_dir }}/.kube"
-    kubeconfig: "{{ ansible_user_dir }}/.kube/config"
+    home: "/home/{{ ansible_user }}"
+    kube: "/home/{{ ansible_user }}/.kube"
+    config: "/home/{{ ansible_user }}/.kube/config"
+    ssh: "/home/{{ ansible_user }}/.ssh"
+    bashrc: "/home/{{ ansible_user }}/.bashrc"
 
 # Wait Configuration
 wait_config:
@@ -109,3 +119,20 @@ rke2_states:
 # Add these monitoring settings
 rke2_monitor_timeout: 600  # 10 minutes
 rke2_monitor_interval: 10  # 10 seconds
+
+# Base system paths that don't change
+base_paths:
+  rke2:
+    config: /etc/rancher/rke2
+    data: /var/lib/rancher/rke2
+    bin: /var/lib/rancher/rke2/bin
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+# Default file permissions
+file_modes:
+  directory:
+    default: '0755'
+    secure: '0700'
+  file:
+    default: '0644'
+    secure: '0600'
