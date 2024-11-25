@@ -93,12 +93,16 @@ def generate_inventory(control_plane_nodes: List[tuple], worker_nodes: List[tupl
                     }
                 }
             },
-            'vars': {}
+            'vars': {
+                'ansible_user': 'ubuntu',
+                'ansible_python_interpreter': '/usr/bin/python3',
+                'ansible_ssh_common_args': '-o StrictHostKeyChecking=no'
+            }
         },
-        'rke2_config': {  # Move RKE2-specific config here
+        'rke2_config': {
             'write_kubeconfig_mode': '0644',
             'token': 'test123',
-            'tls-san': generate_tls_sans(control_plane_nodes, worker_nodes),  # Note: changed from tls_sans to tls-san
+            'tls-san': generate_tls_sans(control_plane_nodes, worker_nodes),
             'control_plane_nodes': [ip for _, ip in control_plane_nodes]
         }
     }
