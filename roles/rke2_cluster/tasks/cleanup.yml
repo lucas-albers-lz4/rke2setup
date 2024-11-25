@@ -9,6 +9,10 @@
     - rke2-agent
   ignore_errors: true
 
+- name: Pause to allow processes to terminate
+  ansible.builtin.wait_for:
+    timeout: "{{ timeout_short }}"
+
 - name: Remove RKE2 files and directories
   file:
     path: "{{ item }}"

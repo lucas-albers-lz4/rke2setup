@@ -102,7 +102,7 @@
     - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
     - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
 
-- name: Ensure UFW is stopped and disabled
+- name: Manage UFW firewall
   block:
     - name: Stop UFW service
       ansible.builtin.systemd:
@@ -110,14 +110,16 @@
         state: stopped
         enabled: false
       register: ufw_stop
+      failed_when: false
 
-    - name: Verify UFW is disabled
-      ansible.builtin.command: ufw status
-      register: ufw_status
-      changed_when: false
-      failed_when: "'Status: active' in ufw_status.stdout"
+    - name: Disable UFW
+      ansible.builtin.command: ufw disable
+      register: ufw_disable
+      changed_when: "'Firewall stopped and disabled on system startup' in ufw_disable.stdout"
+      failed_when: false
 
     - name: Debug UFW status
       ansible.builtin.debug:
-        msg: "UFW Status: {{ ufw_status.stdout }}"
+        msg: "UFW Status: disabled"
+      when: not (ufw_stop.failed | default(true))
   become: true

@@ -27,3 +27,10 @@
   ansible.builtin.include_tasks: validate_control_plane.yml
   when: inventory_hostname == groups['control_plane_nodes'][0]
   tags: [validate]
+
+- name: Verify first control plane
+  include_tasks: verify_first_control_plane.yml
+  when: inventory_hostname == groups['control_plane_nodes'][0]
+  tags: 
+    - verify_control_plane
+    - control_plane
