@@ -37,14 +37,34 @@
         daemon_reload: yes
 
     - name: Clean containerd state
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /var/lib/rancher/rke2/agent/containerd/
-        - /var/lib/rancher/rke2/agent/containerd/db/meta.db
-        - /run/containerd
-        - /run/k3s/containerd
+      block:
+        - name: Kill any remaining containerd processes
+          ansible.builtin.shell: |
+            pkill -9 containerd || true
+            pkill -9 -f "k3s" || true
+            for mp in $(mount | grep containerd | awk '{print $3}'); do
+              umount -f $mp || true
+            done
+            for mp in $(mount | grep "shm" | grep "k3s\|rke2" | awk '{print $3}'); do
+              umount -f $mp || true
+            done
+          changed_when: false
+          failed_when: false
+
+        - name: Wait for processes to terminate
+          ansible.builtin.wait_for:
+            timeout: 5
+          
+        - name: Clean containerd directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /var/lib/rancher/rke2/agent/containerd/
+            - /var/lib/rancher/rke2/agent/containerd/db/meta.db
+            - /run/containerd
+            - /run/k3s/containerd
+          failed_when: false
 
     - name: Run RKE2 uninstall script if exists
       ansible.builtin.command: 
@@ -138,6 +158,35 @@
         msg: "Could not remove directory: {{ item.item }}"
       loop: "{{ dir_check.results }}"
       when: item.stat.exists
+
+    - name: Clean up RKE2 journal logs
+      ansible.builtin.shell: |
+        # Rotate the journal
+        systemctl kill --kill-who=main --signal=SIGUSR2 systemd-journald
+
+        # Clear logs specifically for rke2-server
+        journalctl --rotate --vacuum-time=1s --unit=rke2-server
+
+        # Force clear the journal files
+        rm -f /var/log/journal/*/*.journal
+
+        # Restart journald
+        systemctl restart systemd-journald
+
+        # Verify the logs are cleared (optional)
+        if [ $(journalctl --unit=rke2-server | wc -l) -gt 0 ]; then
+          echo "Warning: Some logs may remain"
+        fi
+      args:
+        executable: /bin/bash
+      register: journal_cleanup
+      failed_when: false
+      changed_when: journal_cleanup.rc == 0
+
+    - name: Display journal cleanup results
+      ansible.builtin.debug:
+        msg: "Journal cleanup completed: {{ journal_cleanup.stdout_lines | default('No output') }}"
+      when: journal_cleanup.stdout_lines is defined
 
     - name: Recommend reboot
       ansible.builtin.debug:
