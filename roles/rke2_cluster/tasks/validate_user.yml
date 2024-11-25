@@ -1,18 +1,12 @@
 ---
-- name: Validate user configuration
-  block:
-    - name: Verify user variables
-      ansible.builtin.assert:
-        that:
-          - ansible_user is defined
-          - ansible_user | length > 0
-        fail_msg: "ansible_user must be defined in inventory"
-        success_msg: "User configuration validated"
+- name: Verify user variables
+  ansible.builtin.assert:
+    that:
+      - ansible_user is defined
+      - ansible_user | length > 0
+    success_msg: "User configuration validated"
+    fail_msg: "ansible_user must be defined and not empty"
 
-    - name: Verify user exists
-      ansible.builtin.getent:
-        database: passwd
-        key: "{{ ansible_user }}"
-      register: user_exists
-      failed_when: user_exists.rc != 0
-  tags: [validate, user]
+- name: Set user home directory
+  ansible.builtin.set_fact:
+    user_home: "/home/{{ ansible_user }}"

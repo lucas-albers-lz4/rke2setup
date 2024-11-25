@@ -3,3 +3,4 @@ PyYAML>=6.0
 ansible-lint>=24.2.0
 pytest
 pyyaml
+pytest-cov

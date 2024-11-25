@@ -30,3 +30,30 @@
       changed_when: false
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+
+- name: Verify RKE2 file permissions
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: rke2_files
+  loop:
+    - "{{ paths.rke2.kubeconfig }}"
+    - "{{ paths.rke2.data }}"
+    - "{{ paths.rke2.bin }}"
+  failed_when: false
+  changed_when: false
+
+- name: Debug RKE2 file permissions
+  ansible.builtin.debug:
+    msg: "{{ item.item }} permissions: {{ item.stat.mode }}"
+  loop: "{{ rke2_files.results }}"
+  when: item.stat.exists
+
+- name: Verify kubectl configuration
+  ansible.builtin.stat:
+    path: "{{ paths.rke2.kubeconfig }}"
+  register: kubeconfig_stat
+
+- name: Fail if kubeconfig doesn't exist
+  ansible.builtin.fail:
+    msg: "RKE2 kubeconfig not found at {{ paths.rke2.kubeconfig }}"
+  when: not kubeconfig_stat.stat.exists

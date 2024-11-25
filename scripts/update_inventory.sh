@@ -21,3 +21,10 @@ else
     echo -e "${RED}Failed to update inventory${NC}" >&2
     exit 1
 fi
+
+if python3 scripts/generate_rke2_configs.py; then
+    echo -e "${GREEN}RKE2 configurations updated successfully!${NC}"
+else
+    echo -e "${RED}Failed to update RKE2 configurations${NC}" >&2
+    exit 1
+fi

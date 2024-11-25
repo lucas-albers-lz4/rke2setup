@@ -1,10 +1,2 @@
 # User configuration
-paths:
-  user:
-    home: "/home/{{ ansible_user }}"
-    kube: "/home/{{ ansible_user }}/.kube"
-    ssh: "/home/{{ ansible_user }}/.ssh"
-    config: "/home/{{ ansible_user }}/.kube/config"
-  system:
-    root_kube: "/root/.kube"
-    root_config: "/root/.kube/config"
+- include_vars: paths.yml

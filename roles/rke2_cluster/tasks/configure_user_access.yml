@@ -6,44 +6,25 @@
     timeout: 300
   register: kubeconfig_file
 
-- name: Create .kube directory for user
+- name: Ensure user .kube directory exists
   ansible.builtin.file:
-    path: "{{ paths.user.kube_dir }}"
+    path: "{{ paths.user.kube }}"
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: '0755'
+    mode: "{{ file_modes.directory.default }}"
 
-- name: Copy kubeconfig to user directory
-  copy:
+- name: Create symlink for user kubeconfig
+  ansible.builtin.file:
     src: "{{ paths.rke2.kubeconfig }}"
-    dest: "{{ paths.user.kubeconfig }}"
-    remote_src: yes
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: '0600'
+    dest: "{{ paths.user.config }}"
+    state: link
+    force: true
   when: kubeconfig_file.stat.exists
 
 - name: Create symlink for kubectl
   ansible.builtin.file:
-    src: /var/lib/rancher/rke2/bin/kubectl
-    dest: /usr/local/bin/kubectl
+    src: "{{ paths.rke2.bin }}/kubectl"
+    dest: "{{ paths.system.bin }}/kubectl"
     state: link
     force: true
-
-- name: Update kubeconfig server address
-  ansible.builtin.replace:
-    path: "{{ paths.user.kubeconfig }}"
-    regexp: 'server: https://127.0.0.1:6443'
-    replace: 'server: https://{{ first_server_ip }}:6443'
-  when: inventory_hostname != groups['control_plane_nodes'][0]
-
-- name: Copy kubeconfig from first control plane to workers
-  ansible.builtin.copy:
-    src: "{{ paths.user.kubeconfig }}"
-    dest: "{{ paths.user.kubeconfig }}"
-    mode: '0600'
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
-  when: inventory_hostname in groups['worker_nodes']

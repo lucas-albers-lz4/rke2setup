@@ -4,6 +4,16 @@
     msg: "Control plane validation must pass before configuring workloads"
   when: not (hostvars[groups['control_plane_nodes'][0]]['control_plane_validated'] | default(false))
 
+- name: Verify RKE2 config directory exists
+  ansible.builtin.stat:
+    path: "{{ paths.rke2.config }}"
+  register: rke2_config_dir
+
+- name: Fail if RKE2 config directory doesn't exist
+  ansible.builtin.fail:
+    msg: "RKE2 config directory not found at {{ paths.rke2.config }}"
+  when: not rke2_config_dir.stat.exists
+
 - name: Configure node for workloads
   ansible.builtin.template:
     src: config.yaml.j2
@@ -16,3 +26,4 @@
       - "workload.type=mixed"
     node_taints:
       - "CriticalAddonsOnly=true:NoSchedule-"
+  when: rke2_config_dir.stat.exists
