@@ -236,3 +236,25 @@
       Node Status: {{ rke2_ready.node.stdout }}
       API Status: {{ rke2_ready.api.status }}
   when: inventory_hostname == groups['control_plane_nodes'][0] and rke2_ready is defined
+
+- name: Start RKE2 server service
+  systemd:
+    name: rke2-server
+    state: started
+    enabled: true
+    daemon_reload: true
+  register: service_start
+  until: service_start is success
+  retries: "{{ retry_standard }}"
+  delay: "{{ retry_delay }}"
+
+- name: Wait for RKE2 to be ready
+  wait_for:
+    host: "{{ inventory_hostname }}"
+    port: 9345
+    timeout: "{{ timeout_startup }}"
+  register: server_ready
+
+- name: Verify first control plane is ready
+  include_tasks: verify_first_control_plane.yml
+  when: server_ready is success
