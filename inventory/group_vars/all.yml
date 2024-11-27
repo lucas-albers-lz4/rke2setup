@@ -1,0 +1,19 @@
+ansible_python_interpreter: /usr/bin/python3
+ansible_user: ubuntu
+commands:
+  rke2: /usr/local/bin/rke2
+paths:
+  rke2:
+    bin: /var/lib/rancher/rke2/bin
+    config: /etc/rancher/rke2
+    data: /var/lib/rancher/rke2
+  system:
+    bin: /usr/local/bin
+rke2_config:
+  tls-san: &id001
+  - 127.0.0.1
+  - localhost
+  token: ''
+  write_kubeconfig_mode: '0644'
+rke2_token: ''
+tls_san: *id001

@@ -1,0 +1,29 @@
+---
+- name: Validate user configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_user is defined
+      - ansible_user | length > 0
+    fail_msg: "ansible_user must be defined in inventory"
+
+- name: Ensure user directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ paths.user.kube }}", mode: '0755' }
+    - { path: "{{ paths.user.ssh }}", mode: '0700' }
+    - { path: "{{ paths.system.root_kube }}", mode: '0755' }
+
+- name: Configure kubeconfig access
+  ansible.builtin.file:
+    src: "{{ base_paths.rke2.kubeconfig }}"
+    dest: "{{ item }}"
+    state: link
+    force: true
+  loop:
+    - "{{ paths.kube.config }}"
+    - "{{ paths.system.root_kube }}/config"

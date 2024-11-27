@@ -1,0 +1,14 @@
+---
+# Default user configuration
+system_user:
+  name: "{{ ansible_user }}"
+  group: "{{ ansible_user }}"
+  shell: /bin/bash
+
+# Base paths that don't change
+base_paths:
+  rke2:
+    config: /etc/rancher/rke2
+    data: /var/lib/rancher/rke2
+    bin: /var/lib/rancher/rke2/bin
+    kubeconfig: /etc/rancher/rke2/rke2.yaml

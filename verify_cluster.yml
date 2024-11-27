@@ -1,0 +1,56 @@
+---
+- name: Verify Cluster Status
+  hosts: control_plane_nodes[0]
+  gather_facts: false
+  become: true
+  
+  vars:
+    kubeconfig: "{{ paths.rke2.kubeconfig }}"
+  
+  tasks:
+    - name: Collect cluster health information
+      block:
+        - name: Check node status
+          ansible.builtin.command:
+            cmd: kubectl get nodes -o wide
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          register: node_status
+          changed_when: false
+
+        - name: Check control plane pods
+          ansible.builtin.command:
+            cmd: kubectl get pods -n kube-system -l tier=control-plane -o wide
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          register: pod_status
+          changed_when: false
+
+        - name: Check etcd health
+          ansible.builtin.command:
+            cmd: kubectl get --raw /healthz/etcd
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          register: etcd_health
+          changed_when: false
+
+        - name: Check API server health
+          ansible.builtin.command:
+            cmd: kubectl get --raw /healthz
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          register: apiserver_health
+          changed_when: false
+
+        - name: Display cluster health summary
+          ansible.builtin.debug:
+            msg:
+              - "=== RKE2 Cluster Health Summary ==="
+              - "API Server: {{ 'HEALTHY' if 'ok' in apiserver_health.stdout else 'UNHEALTHY' }}"
+              - "Etcd: {{ 'HEALTHY' if 'ok' in etcd_health.stdout else 'UNHEALTHY' }}"
+              - ""
+              - "=== Nodes ==="
+              - "{{ node_status.stdout_lines }}"
+              - ""
+              - "=== Control Plane Pods ==="
+              - "{{ pod_status.stdout_lines }}"

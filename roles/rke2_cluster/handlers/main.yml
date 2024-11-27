@@ -5,6 +5,10 @@
     state: restarted
     daemon_reload: true
   when: inventory_hostname in groups['three_node_control_plane']
+  register: restart_result
+  until: restart_result is success
+  retries: "{{ retry_standard }}"
+  delay: "{{ retry_delay }}"
 
 - name: Restart RKE2 agent
   ansible.builtin.systemd:
@@ -12,6 +16,10 @@
     state: restarted
     daemon_reload: true
   when: inventory_hostname in groups['three_node_worker']
+  register: agent_restart
+  until: agent_restart is success
+  retries: "{{ retry_standard }}"
+  delay: "{{ retry_delay }}"
 
 - name: Reload systemd
   ansible.builtin.systemd:
@@ -26,7 +34,7 @@
   ansible.builtin.command:
     cmd: "{{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
   register: node_status
-  retries: 10
-  delay: 10
+  retries: "{{ retry_standard }}"
+  delay: "{{ retry_delay }}"
   until: node_status.stdout == 'True'
   changed_when: false

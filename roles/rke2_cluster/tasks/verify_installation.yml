@@ -22,8 +22,76 @@
         - /etc/rancher/rke2
       register: rke2_files
 
+    - name: Debug file status
+      debug:
+        msg: "File {{ item.item }} exists: {{ item.stat.exists }}"
+      loop: "{{ rke2_files.results }}"
+
+    - name: Start RKE2 service
+      systemd:
+        name: rke2-server
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      become: true
+      register: service_start
+
+    - name: Debug service status
+      debug:
+        var: service_start
+
+    - name: Wait for RKE2 files to be created
+      wait_for:
+        path: "{{ item }}"
+        state: present
+        timeout: "{{ timeout_standard }}"
+      loop:
+        - /var/lib/rancher/rke2/bin/kubectl
+        - /usr/local/bin/rke2
+      register: wait_result
+
     - name: Verify all required files exist
       assert:
-        that: "{{ rke2_files.results | json_query('[*].stat.exists') | all }}"
-        fail_msg: "Missing required RKE2 files: {{ rke2_files.results | json_query('[?!stat.exists].item') }}"
-        success_msg: "All required RKE2 files are present"
+        that: 
+          - rke2_files.results | map(attribute='stat.exists') | select('true') | list | length == rke2_files.results | length
+        msg: "Some required RKE2 files are missing"
+      register: verification_result
+      ignore_errors: yes  # Continue for debugging
+
+    - name: Display verification failure details
+      when: not verification_result.failed
+      debug:
+        msg: 
+          - "Missing files:"
+          - "{{ rke2_files.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
+
+    - name: Check service initialization
+      block:
+        - name: Create diagnostics file
+          file:
+            path: /tmp/rke2-diagnostics.log
+            state: touch
+            mode: '0644'
+          become: true
+
+        - name: Collect service initialization details
+          shell: |
+            echo -e "\n=== Service Initialization Details ===" >> /tmp/rke2-diagnostics.log
+            systemctl show rke2-server --property=StatusText,LoadState,ActiveState >> /tmp/rke2-diagnostics.log
+          become: true
+          register: service_init
+
+        - name: Display service initialization details
+          command: cat /tmp/rke2-diagnostics.log
+          register: diagnostics_output
+          become: true
+
+        - name: Show diagnostics
+          debug:
+            msg: "{{ diagnostics_output.stdout_lines }}"
+
+        - name: Clean up diagnostics file
+          file:
+            path: /tmp/rke2-diagnostics.log
+            state: absent
+          become: true

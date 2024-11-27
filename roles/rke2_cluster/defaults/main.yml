@@ -6,16 +6,24 @@ cluster_type: "six_node"
 first_server_ip: ""
 
 # Installation Paths
-paths:
-  rke2:
-    config: /etc/rancher/rke2
-    data: /var/lib/rancher/rke2
-    bin: /var/lib/rancher/rke2/bin
-    kubeconfig: /etc/rancher/rke2/rke2.yaml
-    binary: /usr/local/bin/rke2
-  user:
-    kube_dir: "{{ ansible_user_dir }}/.kube"
-    kubeconfig: "{{ ansible_user_dir }}/.kube/config"
+rke2_paths:
+  # Pre-installation paths (always exist)
+  system:
+    bin: "/usr/local/bin"
+    systemd: "/etc/systemd/system"
+    
+  # Paths that should exist after package install
+  config:
+    base: "/etc/rancher/rke2"
+    config_yaml: "/etc/rancher/rke2/config.yaml"
+    
+  # Paths that exist after service start
+  runtime:
+    base: "/var/lib/rancher/rke2"
+    bin: "/var/lib/rancher/rke2/bin"
+    server: "/var/lib/rancher/rke2/server"
+    kubeconfig: "/var/lib/rancher/rke2/server/cred/admin.kubeconfig"
+    node_token: "/var/lib/rancher/rke2/server/node-token"
 
 # Wait Configuration
 wait_config:
@@ -109,3 +117,46 @@ rke2_states:
 # Add these monitoring settings
 rke2_monitor_timeout: 600  # 10 minutes
 rke2_monitor_interval: 10  # 10 seconds
+
+# Base system paths that don't change
+base_paths:
+  rke2:
+    config: /etc/rancher/rke2
+    data: /var/lib/rancher/rke2
+    bin: /var/lib/rancher/rke2/bin
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+# Default file permissions
+file_modes:
+  directory:
+    default: '0755'
+    secure: '0700'
+  file:
+    default: '0644'
+    secure: '0600'
+
+# Default RKE2 configuration if not specified in group_vars
+rke2_config:
+  write_kubeconfig_mode: '0644'
+  token: ''  # Will be generated if not provided
+  tls-san:
+    - "127.0.0.1"
+    - "localhost"
+    - "kubernetes"
+    - "kubernetes.default"
+    - "kubernetes.default.svc"
+    - "kubernetes.default.svc.cluster.local"
+
+# Timeout configurations
+retry_delay: 10
+retry_quick: 3
+retry_standard: 6
+retry_extended: 30
+
+timeout_short: 30
+timeout_standard: 60
+timeout_service: 180
+timeout_startup: 300
+timeout_reboot: 600
+timeout_connection: 30
+timeout_api_check: 180

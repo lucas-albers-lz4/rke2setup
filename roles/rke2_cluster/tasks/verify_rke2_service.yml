@@ -1,27 +1,15 @@
 ---
-- name: Check RKE2 service status
-  ansible.builtin.systemd:
-    name: rke2-server
-  register: service_status
-
-- name: Display service status
-  ansible.builtin.debug:
-    msg: 
-      - "Service Status: {{ service_status.status.SubState }}"
-      - "Active Since: {{ service_status.status.ActiveEnterTimestamp }}"
-
-- name: Get service logs if not running
-  when: service_status.status.SubState != 'running'
+- name: Quick service verification
   block:
-    - name: Collect service logs
-      ansible.builtin.command: journalctl -u rke2-server.service --no-pager -n 50
-      register: rke2_logs
+    - name: Check RKE2 service status
+      ansible.builtin.systemd:
+        name: rke2-server
+      register: service_status
 
-    - name: Display service logs
-      ansible.builtin.debug:
-        var: rke2_logs.stdout_lines
-
-- name: Check service initialization
-  shell: |
-    echo -e "\n=== Service Initialization Details ===" >> /tmp/rke2-diagnostics.log
-    systemctl show rke2-server --property=StatusText,LoadState,ActiveState >> /tmp/rke2-diagnostics.log
+    - name: Fail fast if service isn't running
+      fail:
+        msg: |
+          RKE2 service failed to start properly.
+          Status: {{ service_status.status.SubState }}
+          See: journalctl -u rke2-server -n 50
+      when: service_status.status.SubState != 'running'

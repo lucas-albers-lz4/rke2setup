@@ -1,7 +1,7 @@
 ---
 - name: Ensure .ssh directory exists
   ansible.builtin.file:
-    path: "/home/{{ ansible_user }}/.ssh"
+    path: "{{ paths.user.ssh_dir }}"
     state: directory
     mode: '0700'
     owner: "{{ ansible_user }}"
@@ -9,7 +9,7 @@
 
 - name: Generate SSH key for cluster communication
   community.crypto.openssh_keypair:
-    path: "/home/{{ ansible_user }}/.ssh/rke2_cluster_key"
+    path: "{{ paths.user.ssh_dir }}/rke2_cluster_key"
     type: ed25519
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"

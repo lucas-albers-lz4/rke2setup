@@ -46,35 +46,34 @@
 
 - name: Create RKE2 config directory
   ansible.builtin.file:
-    path: /etc/rancher/rke2
+    path: "{{ paths.rke2.config }}"
     state: directory
     mode: '0755'
-    owner: root
-    group: root
   become: true
 
 - name: Configure first control plane node
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: /etc/rancher/rke2/config.yaml
-    mode: '0600'
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: '0644'
+  vars:
+    tls_san: "{{ rke2_config['tls-san'] }}"
+    token: "{{ rke2_config.token }}"
+  become: true
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:
     url: https://get.rke2.io
     dest: /tmp/rke2-install.sh
-    mode: '0755'
-  register: rke2_installer
+    mode: '0700'
+  become: true
 
-- name: Install RKE2 server
-  block:
-    - name: Execute RKE2 server installation
-      ansible.builtin.shell: |
-        INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
-      args:
-        creates: "{{ commands.rke2 }}"
-      environment:
-        INSTALL_RKE2_METHOD: tar
+- name: Execute RKE2 server installation
+  ansible.builtin.shell: |
+    INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
+  args:
+    creates: /usr/local/bin/rke2
+  become: true
 
 - name: Manage RKE2 server service
   block:
@@ -101,21 +100,28 @@
           - "Active Since: {{ service_status.status.ActiveEnterTimestamp }}"
   rescue:
     - name: Collect failure information
-      shell: |
-        echo "=== Service Status ===" > /tmp/rke2-failure.log
-        systemctl status rke2-server >> /tmp/rke2-failure.log
-        echo -e "\n=== Recent Logs ===" >> /tmp/rke2-failure.log
-        journalctl -u rke2-server -n 50 >> /tmp/rke2-failure.log
-      when: rke2_init_failed | default(false)
-      ignore_errors: true
+      block:
+        - name: Get service status
+          command: systemctl status rke2-server
+          register: service_status
+          ignore_errors: true
 
-    - name: Display failure information
-      ansible.builtin.debug:
-        msg: "{{ lookup('file', '/tmp/rke2-failure.log').split('\n') }}"
+        - name: Get recent logs
+          command: journalctl -u rke2-server -n 50
+          register: service_logs
+          ignore_errors: true
+
+        - name: Display failure information
+          debug:
+            msg:
+              - "=== Service Status ==="
+              - "{{ service_status.stdout_lines | default([]) }}"
+              - "=== Recent Logs ==="
+              - "{{ service_logs.stdout_lines | default([]) }}"
 
     - name: Fail with error
       ansible.builtin.fail:
-        msg: "RKE2 server failed to start properly. Check the logs for details."
+        msg: "RKE2 server failed to start properly. Check the logs above for details."
 
 - name: Wait for RKE2 binaries to be installed
   wait_for:
@@ -140,7 +146,7 @@
 
 - name: Create .kube directory
   ansible.builtin.file:
-    path: "{{ paths.user.kube_dir }}"
+    path: "{{ paths.user.kube }}"
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -149,11 +155,12 @@
 - name: Copy kubeconfig
   ansible.builtin.copy:
     src: "{{ paths.rke2.kubeconfig }}"
-    dest: "{{ paths.user.kubeconfig }}"
-    remote_src: true
+    dest: "{{ paths.user.config }}"
+    remote_src: yes
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: '0600'
+  when: kubectl_binary.stat is defined
 
 - name: Debug token generation process
   block:
@@ -168,17 +175,6 @@
       ansible.builtin.debug:
         msg: "Generating or retrieving token for {{ inventory_hostname }}"
 
-# Add firewall rules if needed
-- name: Configure required ports
-  ufw:
-    rule: allow
-    port: "{{ item }}"
-    proto: tcp
-  with_items:
-    - 6443  # Kubernetes API
-    - 2379  # etcd client
-    - 2380  # etcd peer
-
 - name: Wait for token to be available
   ansible.builtin.wait_for:
     timeout: 30
@@ -189,3 +185,76 @@
     msg: "Token status for {{ item }}: {{ hostvars[item].rke2_token is defined }}"
   with_items: "{{ groups['all'] }}"
   run_once: true
+
+- name: Wait for first control plane to be ready
+  ansible.builtin.wait_for:
+    path: "{{ paths.rke2.kubeconfig }}"
+    state: present
+    timeout: "{{ timeout_startup }}"
+  register: kubeconfig_file
+
+- name: Wait for RKE2 to be ready on first control plane
+  when: inventory_hostname == groups['control_plane_nodes'][0]
+  block:
+    - name: Include comprehensive server checks
+      include_tasks: wait_for_server.yml
+
+    - name: Set fact for control plane readiness
+      set_fact:
+        control_plane_ready: true
+        rke2_ready:
+          service: "{{ rke2_service }}"
+          ports: "{{ port_check }}"
+          api: "{{ healthz_check }}"
+        cacheable: true
+
+  rescue:
+    - name: Collect service logs safely
+      shell: |
+        logfile=$(mktemp)
+        journalctl -u rke2-server --no-pager -n 50 > "$logfile"
+        cat "$logfile"
+        rm -f "$logfile"
+      register: service_logs
+      changed_when: false
+
+    - name: First control plane verification failed
+      fail:
+        msg: |
+          First control plane node failed verification:
+          Service Status: {{ rke2_status.stdout | default('Unknown') }}
+          Node Status: {{ node_status.stdout | default('Unknown') }}
+          API Status: {{ api_check.status | default('Unknown') }}
+          
+          Recent Logs:
+          {{ service_logs.stdout_lines | default([]) | join('\n') }}
+
+- name: Debug RKE2 status
+  debug:
+    msg: |
+      Service Status: {{ rke2_ready.service.stdout }}
+      Node Status: {{ rke2_ready.node.stdout }}
+      API Status: {{ rke2_ready.api.status }}
+  when: inventory_hostname == groups['control_plane_nodes'][0] and rke2_ready is defined
+
+- name: Start RKE2 server service
+  systemd:
+    name: rke2-server
+    state: started
+    enabled: true
+    daemon_reload: true
+  register: service_start
+  until: service_start is success
+  retries: "{{ retry_standard }}"
+  delay: "{{ retry_delay }}"
+
+- name: Wait for RKE2 to be ready
+  wait_for:
+    host: "{{ inventory_hostname }}"
+    port: 9345
+    timeout: "{{ timeout_startup }}"
+  register: server_ready
+
+- name: Verify first control plane is ready
+  include_tasks: verify_first_control_plane.yml
+  when: server_ready is success

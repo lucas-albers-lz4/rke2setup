@@ -1,0 +1,33 @@
+# RKE2 paths
+paths:
+  rke2:
+    config: /etc/rancher/rke2
+    data: /var/lib/rancher/rke2
+    bin: /var/lib/rancher/rke2/bin
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+  user:
+    home: "/home/{{ ansible_user }}"
+    kube: "/home/{{ ansible_user }}/.kube"
+    ssh: "/home/{{ ansible_user }}/.ssh"
+    config: "/home/{{ ansible_user }}/.kube/config"
+    bashrc: "/home/{{ ansible_user }}/.bashrc"
+  system:
+    bin: /usr/local/bin
+    root_kube: /root/.kube
+    root_config: /root/.kube/config
+    root_bashrc: /root/.bashrc
+
+# File modes
+file_modes:
+  directory:
+    default: '0755'
+    secure: '0700'
+  file:
+    default: '0644'
+    secure: '0600'
+
+# RKE2 configuration
+rke2_config:
+  write_kubeconfig_mode: "0644"
+  token: "{{ rke2_token | default('') }}"
+  tls_san: "{{ tls_san | default([]) }}"
