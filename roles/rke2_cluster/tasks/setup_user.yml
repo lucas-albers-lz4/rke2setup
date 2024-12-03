@@ -6,13 +6,13 @@
   ansible.builtin.lineinfile:
     path: "{{ paths.user.bashrc }}"
     line: "export KUBECONFIG={{ paths.rke2.kubeconfig }}"
-    regexp: '^export KUBECONFIG='
-    create: yes
+    regexp: "^export KUBECONFIG="
+    create: true
 
 - name: Configure root environment
   ansible.builtin.lineinfile:
     path: "{{ paths.system.root_bashrc }}"
     line: "export KUBECONFIG={{ paths.rke2.kubeconfig }}"
-    regexp: '^export KUBECONFIG='
-    create: yes
+    regexp: "^export KUBECONFIG="
+    create: true
   become: true

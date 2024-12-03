@@ -1,7 +1,8 @@
+---
 - name: Check system status before reboot
   block:
     - name: Check for pending package updates
-      shell: |
+      ansible.builtin.shell: |
         if command -v apt-get >/dev/null 2>&1; then
           apt-get -s upgrade | grep -q '^Inst'
         elif command -v yum >/dev/null 2>&1; then
@@ -12,17 +13,16 @@
       failed_when: false
 
     - name: Record uptime before reboot
-      shell: cat /proc/uptime | awk '{print $1}'
+      ansible.builtin.shell: cat /proc/uptime | awk '{print $1}'
       register: uptime_before
       changed_when: false
 
-
 - name: Sync filesystems before reboot
-  shell: sync
+  ansible.builtin.command: sync
   changed_when: false
 
 - name: Schedule reboot with warning
-  shell: |
+  ansible.builtin.shell: |
     wall "System reboot scheduled in 2 seconds by Ansible"
     sleep 2 && systemctl reboot
   async: 1
@@ -30,7 +30,7 @@
   ignore_errors: true
 
 - name: Wait for shutdown
-  wait_for_connection:
+  ansible.builtin.wait_for_connection:
     timeout: 60
     connect_timeout: 2
     delay: 5
@@ -40,7 +40,7 @@
   ignore_errors: true
 
 - name: Wait for port 22 to be available
-  wait_for:
+  ansible.builtin.wait_for:
     host: "{{ ansible_host }}"
     port: 22
     state: started
@@ -51,13 +51,13 @@
   become: false
 
 - name: Wait for system to settle
-  wait_for:
+  ansible.builtin.wait_for:
     timeout: 30
   delegate_to: localhost
   become: false
 
 - name: Wait for system to come back
-  wait_for_connection:
+  ansible.builtin.wait_for_connection:
     delay: 10
     sleep: 5
     timeout: 600
@@ -70,12 +70,12 @@
 - name: Post-reboot verification
   block:
     - name: Get uptime after reboot
-      shell: cat /proc/uptime | awk '{print $1}'
+      ansible.builtin.shell: cat /proc/uptime | awk '{print $1}'
       register: uptime_after
       changed_when: false
 
     - name: Verify system services are running
-      service:
+      ansible.builtin.service:
         name: "{{ item }}"
         state: started
       loop:
@@ -87,13 +87,13 @@
       until: service_status is success
 
     - name: Check system status
-      shell: systemctl is-system-running
+      ansible.builtin.command: systemctl is-system-running
       register: system_status
       changed_when: false
       failed_when: false
 
     - name: Verify network connectivity
-      wait_for:
+      ansible.builtin.wait_for:
         host: "{{ ansible_host }}"
         port: 22
         timeout: "{{ timeout_standard }}"
@@ -101,7 +101,7 @@
       become: false
 
     - name: Debug reboot status
-      debug:
+      ansible.builtin.debug:
         msg: |
           Host: {{ inventory_hostname }}
           Uptime before: {{ uptime_before.stdout }}
@@ -113,12 +113,12 @@
 
   rescue:
     - name: Report failed post-reboot checks
-      debug:
+      ansible.builtin.debug:
         msg: "Post-reboot verification failed for {{ inventory_hostname }}"
       failed_when: true
 
 - name: Verify successful reboot
-  assert:
+  ansible.builtin.assert:
     that:
       - uptime_after.stdout | float < uptime_before.stdout | float
       - system_status.stdout in ['running', 'degraded']

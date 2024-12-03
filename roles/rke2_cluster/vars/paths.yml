@@ -19,8 +19,8 @@ paths:
 
 file_modes:
   directory:
-    default: '0755'
-    secure: '0700'
+    default: "0755"
+    secure: "0700"
   file:
-    default: '0644'
-    secure: '0600'
+    default: "0644"
+    secure: "0600"

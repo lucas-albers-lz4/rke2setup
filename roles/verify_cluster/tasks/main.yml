@@ -3,7 +3,7 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: '0755'
+    mode: "0755"
   loop:
     - /root/.kube
     - /home/{{ ansible_user }}/.kube
@@ -21,9 +21,9 @@
 - name: Set KUBECONFIG environment variable
   ansible.builtin.lineinfile:
     path: "{{ item }}"
-    line: 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml'
-    regexp: '^export KUBECONFIG='
-    create: yes
+    line: "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml"
+    regexp: "^export KUBECONFIG="
+    create: true
   loop:
     - /root/.bashrc
     - /home/{{ ansible_user }}/.bashrc

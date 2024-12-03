@@ -3,10 +3,10 @@
   hosts: control_plane_nodes[0]
   gather_facts: false
   become: true
-  
+
   vars:
     kubeconfig: "{{ paths.rke2.kubeconfig }}"
-  
+
   tasks:
     - name: Collect cluster health information
       block:

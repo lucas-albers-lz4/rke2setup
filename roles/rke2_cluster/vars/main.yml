@@ -1,3 +1,4 @@
+---
 # RKE2 paths
 paths:
   rke2:
@@ -20,11 +21,11 @@ paths:
 # File modes
 file_modes:
   directory:
-    default: '0755'
-    secure: '0700'
+    default: "0755"
+    secure: "0700"
   file:
-    default: '0644'
-    secure: '0600'
+    default: "0644"
+    secure: "0600"
 
 # RKE2 configuration
 rke2_config:

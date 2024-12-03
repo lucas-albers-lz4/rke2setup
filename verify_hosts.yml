@@ -19,9 +19,7 @@
 
     - name: Set fact for IP conflicts
       ansible.builtin.set_fact:
-        ip_conflicts: "{{ 'Not Detected' if 
-          (ansible_host in real_ips.stdout_lines) and 
-          (real_ips.stdout_lines | select('match', '^192.168') | list | length == 1)
+        ip_conflicts: "{{ 'Not Detected' if (ansible_host in real_ips.stdout_lines) and (real_ips.stdout_lines | select('match', '^192.168') | list | length == 1)
           else 'Detected' }}"
 
     - name: Get hosts file content
@@ -56,25 +54,19 @@
           - "=== DNS Resolution Details ==="
           - "{{ dns_details.stdout }}"
           - "IP Conflicts: {{ ip_conflicts }}"
-          - "Status: {{ 'PASS' if (ansible_hostname | lower == inventory_hostname | lower) and 
-                                (expected_ip in real_ips.stdout_lines) and 
-                                (dns_details.rc == 0) and 
-                                (ip_conflicts == 'Not Detected')
-                      else 'FAIL' }}"
+          - "Status: {{ 'PASS' if (ansible_hostname | lower == inventory_hostname | lower) and (expected_ip in real_ips.stdout_lines) and (dns_details.rc == 0) and
+            (ip_conflicts == 'Not Detected') else 'FAIL' }}"
 
     - name: Fail if verification issues detected
       ansible.builtin.fail:
         msg: |-
           Host verification failed for {{ inventory_hostname }}:
           {%- if ip_conflicts == 'Detected' %}
-          - IP conflict detected
-          {%- endif %}
+          - IP conflict detected{%- endif %}
           {%- if dns_details.rc != 0 %}
-          - DNS resolution failed
-          {%- endif %}
+          - DNS resolution failed{%- endif %}
           {%- if ansible_hostname | lower != inventory_hostname | lower %}
-          - Hostname mismatch
-          {%- endif %}
+          - Hostname mismatch{%- endif %}
       when: >-
         ip_conflicts == 'Detected' or
         dns_details.rc != 0 or

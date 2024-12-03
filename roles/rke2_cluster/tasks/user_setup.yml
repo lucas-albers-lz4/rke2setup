@@ -14,9 +14,9 @@
     group: "{{ ansible_user }}"
     mode: "{{ item.mode }}"
   loop:
-    - { path: "{{ paths.user.kube }}", mode: '0755' }
-    - { path: "{{ paths.user.ssh }}", mode: '0700' }
-    - { path: "{{ paths.system.root_kube }}", mode: '0755' }
+    - { path: "{{ paths.user.kube }}", mode: "0755" }
+    - { path: "{{ paths.user.ssh }}", mode: "0700" }
+    - { path: "{{ paths.system.root_kube }}", mode: "0755" }
 
 - name: Configure kubeconfig access
   ansible.builtin.file:

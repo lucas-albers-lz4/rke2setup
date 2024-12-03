@@ -17,6 +17,8 @@
   when: rke2_config.stat.exists and rke2_config_content is defined
 
 - name: Generate new token if none exists
+  when: not rke2_config.stat.exists
+
   block:
     - name: Generate cluster token
       ansible.builtin.shell: tr -dc A-Za-z0-9 </dev/urandom | head -c 64
@@ -27,11 +29,9 @@
       ansible.builtin.set_fact:
         rke2_token: "{{ token_result.stdout }}"
       when: token_result is defined and token_result.stdout is defined
-  when: not rke2_config.stat.exists
-
 - name: Verify token is set
   ansible.builtin.assert:
-    that: 
+    that:
       - rke2_token is defined
       - rke2_token | string | length > 0
     fail_msg: "Failed to set RKE2 token - neither existing token found nor new token generated"
@@ -48,14 +48,14 @@
   ansible.builtin.file:
     path: "{{ paths.rke2.config }}"
     state: directory
-    mode: '0755'
+    mode: "0755"
   become: true
 
 - name: Configure first control plane node
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ paths.rke2.config }}/config.yaml"
-    mode: '0644'
+    mode: "0644"
   vars:
     tls_san: "{{ rke2_config['tls-san'] }}"
     token: "{{ rke2_config.token }}"
@@ -65,7 +65,7 @@
   ansible.builtin.get_url:
     url: https://get.rke2.io
     dest: /tmp/rke2-install.sh
-    mode: '0700'
+    mode: "0700"
   become: true
 
 - name: Execute RKE2 server installation
@@ -81,10 +81,10 @@
       ansible.builtin.include_tasks: monitor_rke2.yml
 
     - name: Start RKE2 server service if not running
-      systemd:
+      ansible.builtin.systemd:
         name: rke2-server
         state: started
-        enabled: yes
+        enabled: true
       when: not rke2_fully_running
       register: rke2_service_result
 
@@ -95,24 +95,24 @@
 
     - name: Display service status
       ansible.builtin.debug:
-        msg: 
+        msg:
           - "Service Status: {{ service_status.status.SubState }}"
           - "Active Since: {{ service_status.status.ActiveEnterTimestamp }}"
   rescue:
     - name: Collect failure information
       block:
         - name: Get service status
-          command: systemctl status rke2-server
+          ansible.builtin.command: systemctl status rke2-server
           register: service_status
           ignore_errors: true
 
         - name: Get recent logs
-          command: journalctl -u rke2-server -n 50
+          ansible.builtin.command: journalctl -u rke2-server -n 50
           register: service_logs
           ignore_errors: true
 
         - name: Display failure information
-          debug:
+          ansible.builtin.debug:
             msg:
               - "=== Service Status ==="
               - "{{ service_status.stdout_lines | default([]) }}"
@@ -124,14 +124,14 @@
         msg: "RKE2 server failed to start properly. Check the logs above for details."
 
 - name: Wait for RKE2 binaries to be installed
-  wait_for:
+  ansible.builtin.wait_for:
     path: "/var/lib/rancher/rke2/bin/kubectl"
     timeout: 300
   register: kubectl_binary
 
 - name: Debug kubectl binary status
-  debug:
-    msg: 
+  ansible.builtin.debug:
+    msg:
       - "Kubectl binary exists: {{ kubectl_binary.stat.exists | default(false) }}"
       - "Wait time: {{ kubectl_binary.elapsed }}"
       - "Path: /var/lib/rancher/rke2/bin/kubectl"
@@ -150,23 +150,23 @@
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: '0755'
+    mode: "0755"
 
 - name: Copy kubeconfig
   ansible.builtin.copy:
     src: "{{ paths.rke2.kubeconfig }}"
     dest: "{{ paths.user.config }}"
-    remote_src: yes
+    remote_src: true
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: '0600'
+    mode: "0600"
   when: kubectl_binary.stat is defined
 
 - name: Debug token generation process
   block:
     - name: Show existing configuration status
       ansible.builtin.debug:
-        msg: 
+        msg:
           - "RKE2 config exists: {{ rke2_config.stat.exists }}"
           - "Inventory hostname: {{ inventory_hostname }}"
           - "First control plane node: {{ groups['control_plane_nodes'][0] }}"
@@ -197,10 +197,9 @@
   when: inventory_hostname == groups['control_plane_nodes'][0]
   block:
     - name: Include comprehensive server checks
-      include_tasks: wait_for_server.yml
-
+      ansible.builtin.include_tasks: wait_for_server.yml
     - name: Set fact for control plane readiness
-      set_fact:
+      ansible.builtin.set_fact:
         control_plane_ready: true
         rke2_ready:
           service: "{{ rke2_service }}"
@@ -210,7 +209,7 @@
 
   rescue:
     - name: Collect service logs safely
-      shell: |
+      ansible.builtin.shell: |
         logfile=$(mktemp)
         journalctl -u rke2-server --no-pager -n 50 > "$logfile"
         cat "$logfile"
@@ -219,18 +218,18 @@
       changed_when: false
 
     - name: First control plane verification failed
-      fail:
+      ansible.builtin.fail:
         msg: |
           First control plane node failed verification:
           Service Status: {{ rke2_status.stdout | default('Unknown') }}
           Node Status: {{ node_status.stdout | default('Unknown') }}
           API Status: {{ api_check.status | default('Unknown') }}
-          
+
           Recent Logs:
           {{ service_logs.stdout_lines | default([]) | join('\n') }}
 
 - name: Debug RKE2 status
-  debug:
+  ansible.builtin.debug:
     msg: |
       Service Status: {{ rke2_ready.service.stdout }}
       Node Status: {{ rke2_ready.node.stdout }}
@@ -238,7 +237,7 @@
   when: inventory_hostname == groups['control_plane_nodes'][0] and rke2_ready is defined
 
 - name: Start RKE2 server service
-  systemd:
+  ansible.builtin.systemd:
     name: rke2-server
     state: started
     enabled: true
@@ -249,12 +248,12 @@
   delay: "{{ retry_delay }}"
 
 - name: Wait for RKE2 to be ready
-  wait_for:
+  ansible.builtin.wait_for:
     host: "{{ inventory_hostname }}"
     port: 9345
     timeout: "{{ timeout_startup }}"
   register: server_ready
 
 - name: Verify first control plane is ready
-  include_tasks: verify_first_control_plane.yml
+  ansible.builtin.include_tasks: verify_first_control_plane.yml
   when: server_ready is success

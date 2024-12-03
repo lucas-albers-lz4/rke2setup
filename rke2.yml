@@ -1,8 +1,9 @@
+---
 - name: Deploy Six Node RKE2 Cluster
   hosts: six_node_cluster
   gather_facts: true
   strategy: linear
-  
+
   pre_tasks:
     - name: Verify control plane nodes are defined
       ansible.builtin.assert:

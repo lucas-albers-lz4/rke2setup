@@ -3,13 +3,13 @@
   hosts: control_plane_nodes
   gather_facts: true
   become: true
-  
+
   tasks:
     - name: Ensure kubectl directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
       loop:
@@ -29,9 +29,9 @@
     - name: Set KUBECONFIG environment variable
       ansible.builtin.lineinfile:
         path: "{{ item }}"
-        line: 'export KUBECONFIG={{ paths.rke2.kubeconfig }}'
-        regexp: '^export KUBECONFIG='
-        create: yes
+        line: "export KUBECONFIG={{ paths.rke2.kubeconfig }}"
+        regexp: "^export KUBECONFIG="
+        create: true
       loop:
         - "{{ paths.user.home }}/.bashrc"
         - /root/.bashrc

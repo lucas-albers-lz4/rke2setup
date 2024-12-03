@@ -64,10 +64,9 @@
       delay: "{{ retry_delay }}"
   rescue:
     - name: Run diagnostics on failure
-      include_tasks: diagnostics.yml
-
+      ansible.builtin.include_tasks: diagnostics.yml
 - name: Wait for RKE2 binaries to be installed
-  wait_for:
+  ansible.builtin.wait_for:
     path: /var/lib/rancher/rke2/bin/kubectl
     timeout: 300
   register: kubectl_binary

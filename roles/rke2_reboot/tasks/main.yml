@@ -1,21 +1,21 @@
 ---
 - name: Check for pending package updates
-  command: needs-restarting -r
+  ansible.builtin.command: needs-restarting -r
   register: updates_pending
   failed_when: false
   changed_when: false
 
 - name: Record uptime before reboot
-  shell: cat /proc/uptime | awk '{print $1}'
+  ansible.builtin.shell: cat /proc/uptime | awk '{print $1}'
   register: uptime_before
   changed_when: false
 
 - name: Sync filesystems before reboot
-  command: sync
+  ansible.builtin.command: sync
   changed_when: false
 
 - name: Schedule reboot with warning
-  reboot:
+  ansible.builtin.reboot:
     msg: "System reboot initiated by Ansible"
     pre_reboot_delay: 10
     post_reboot_delay: 30
@@ -25,12 +25,12 @@
 - name: Post-reboot verification
   block:
     - name: Get uptime after reboot
-      shell: cat /proc/uptime | awk '{print $1}'
+      ansible.builtin.shell: cat /proc/uptime | awk '{print $1}'
       register: uptime_after
       changed_when: false
 
     - name: Verify system services are running
-      service:
+      ansible.builtin.service:
         name: "{{ item }}"
         state: started
       loop:
@@ -42,13 +42,13 @@
       until: service_status is success
 
     - name: Check system status
-      shell: systemctl is-system-running
+      ansible.builtin.command: systemctl is-system-running
       register: system_status
       changed_when: false
       failed_when: false
 
     - name: Debug reboot status
-      debug:
+      ansible.builtin.debug:
         msg: |
           Host: {{ inventory_hostname }}
           Uptime before: {{ uptime_before.stdout }}
@@ -60,5 +60,5 @@
 
   rescue:
     - name: Report failed post-reboot checks
-      fail:
+      ansible.builtin.fail:
         msg: "Post-reboot verification failed for {{ inventory_hostname }}"

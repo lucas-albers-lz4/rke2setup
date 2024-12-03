@@ -1,3 +1,4 @@
+---
 - name: Install RKE2 agent
   ansible.builtin.shell: |
     export INSTALL_RKE2_TYPE=agent
