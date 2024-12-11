@@ -28,3 +28,4 @@ inventory/hosts.txt
 *.md text eol=lf
 generated_configs/
 .coverage
+inventory/group_vars/all.yml
