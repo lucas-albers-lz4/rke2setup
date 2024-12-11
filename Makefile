@@ -1,4 +1,4 @@
-.PHONY: test generate clean help verify cleanup reboot setup-control setup-workers setup-cluster verify-cluster deploy-workflow configure-kubectl verify-kubectl verify-all-hosts verify-control-hosts verify-worker-hosts
+.PHONY: test generate clean help verify cleanup reboot setup-control setup-workers setup-cluster verify-cluster deploy-workflow configure-kubectl verify-kubectl verify-all-hosts verify-control-hosts verify-worker-hosts preview-configs
 
 # Default target
 .DEFAULT_GOAL := help
@@ -81,3 +81,11 @@ configure-kubectl:  ## Setup kubectl access on control plane nodes
 
 verify-kubectl: configure-kubectl  ## Verify kubectl access and cluster status
 	$(ANSIBLE) -i $(INVENTORY_YML) verify_cluster.yml
+
+generate-configs:  ## Preview RKE2 config files that would be generated
+	@mkdir -p generated_configs/preview
+	$(ANSIBLE) -i $(INVENTORY_YML) preview_configs.yml
+	@echo "\nConfig files have been generated in generated_configs/preview/"
+	@echo "Use 'cat generated_configs/preview/<hostname>_config.yaml' to view specific configs"
+	@echo "\nQuick overview of generated files:"
+	@ls -l generated_configs/preview/
