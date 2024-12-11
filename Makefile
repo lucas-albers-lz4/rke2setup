@@ -84,7 +84,7 @@ verify-kubectl: configure-kubectl  ## Verify kubectl access and cluster status
 
 generate-configs:  ## Preview RKE2 config files that would be generated
 	@mkdir -p generated_configs/preview
-	$(ANSIBLE) -i $(INVENTORY_YML) preview_configs.yml
+	$(ANSIBLE) -i $(INVENTORY_YML) generate_configs.yml
 	@echo "\nConfig files have been generated in generated_configs/preview/"
 	@echo "Use 'cat generated_configs/preview/<hostname>_config.yaml' to view specific configs"
 	@echo "\nQuick overview of generated files:"

@@ -1,0 +1,40 @@
+---
+- name: Preview RKE2 Configurations
+  hosts: all
+  gather_facts: false
+  connection: local
+  any_errors_fatal: false
+  ignore_unreachable: true
+  tasks:
+    - name: Generate test token for preview
+      ansible.builtin.set_fact:
+        rke2_token: "preview-k8s.token.{{ 999999999999 | random }}"
+      run_once: true
+
+    - name: Share token with all hosts
+      ansible.builtin.set_fact:
+        rke2_token: "{{ hostvars[groups['all'][0]]['rke2_token'] }}"
+
+    - name: Create preview directory
+      ansible.builtin.file:
+        path: "generated_configs/preview"
+        state: directory
+        mode: '0755'
+      run_once: true
+
+    - name: Generate preview config for each node
+      ansible.builtin.template:
+        src: "roles/rke2_cluster/templates/config.yaml.j2"
+        dest: "generated_configs/preview/{{ inventory_hostname }}_config.yaml"
+        mode: '0644'
+      vars:
+        preview_mode: true
+
+    - name: Display preview location
+      ansible.builtin.debug:
+        msg: 
+          - "Config previews generated in generated_configs/preview/"
+          - "Files generated:"
+          - "{% for host in groups['all'] %}  - {{ host }}_config.yaml{% endfor %}"
+          - "Token used: {{ rke2_token }}"
+      run_once: true
