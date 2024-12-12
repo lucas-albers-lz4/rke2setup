@@ -1,0 +1,170 @@
+---
+- name: Set common variables
+  ansible.builtin.set_fact:
+    etcd_base_cmd: >-
+      export PATH=/var/lib/rancher/rke2/bin:$PATH;
+      kubectl exec -n kube-system etcd-{{ groups['control_plane_nodes'][0] | lower }} -- etcdctl
+      --endpoints=https://127.0.0.1:2379
+      --cacert=/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
+      --cert=/var/lib/rancher/rke2/server/tls/etcd/server-client.crt
+      --key=/var/lib/rancher/rke2/server/tls/etcd/server-client.key
+    kubectl_env:
+      KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+      PATH: /var/lib/rancher/rke2/bin:{{ ansible_env.PATH }}
+    rke2_dirs:
+      - /etc/rancher/rke2
+      - /var/lib/rancher/rke2/bin
+      - /usr/local/bin
+
+- name: Verify cluster health before rebuild
+  ansible.builtin.include_tasks: verify_cluster.yml
+  when: inventory_hostname != groups['control_plane_nodes'][0]
+
+- name: Get existing token from first control plane
+  ansible.builtin.slurp:
+    src: /etc/rancher/rke2/config.yaml
+  register: existing_config
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+
+- name: Set token from existing cluster
+  ansible.builtin.set_fact:
+    rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token }}"
+
+- name: Ensure RKE2 directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  become: true
+  loop: "{{ rke2_dirs }}"
+
+- name: Debug etcd member list
+  ansible.builtin.shell: "{{ etcd_base_cmd }} member list"
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  environment: "{{ kubectl_env }}"
+  register: etcd_members
+
+- name: Get etcd member ID for the node
+  ansible.builtin.shell: "{{ etcd_base_cmd }} member list | grep {{ inventory_hostname | lower }} | cut -d',' -f1"
+  register: etcd_member_id
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  environment: "{{ kubectl_env }}"
+  when: inventory_hostname in groups['control_plane_nodes']
+
+- name: Remove etcd member
+  ansible.builtin.shell: "{{ etcd_base_cmd }} member remove {{ etcd_member_id.stdout }}"
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  environment: "{{ kubectl_env }}"
+  when: 
+    - inventory_hostname in groups['control_plane_nodes']
+    - etcd_member_id.stdout is defined
+    - etcd_member_id.stdout != ""
+
+- name: Verify etcd member removal
+  ansible.builtin.command: "{{ etcd_base_cmd }} member list"
+  register: etcd_member_list
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  environment: "{{ kubectl_env }}"
+  changed_when: false
+  when: 
+    - inventory_hostname in groups['control_plane_nodes']
+    - etcd_member_id.stdout is defined
+    - etcd_member_id.stdout != ""
+
+- name: Fail if node still exists in etcd
+  ansible.builtin.fail:
+    msg: "Node {{ inventory_hostname }} still exists in etcd member list"
+  when:
+    - inventory_hostname in groups['control_plane_nodes']
+    - etcd_member_id.stdout is defined
+    - etcd_member_id.stdout != ""
+    - inventory_hostname | lower in (etcd_member_list.stdout | default(''))
+
+- name: Delete node from Kubernetes
+  ansible.builtin.shell: "kubectl delete node {{ inventory_hostname | lower }}"
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  environment: "{{ kubectl_env }}"
+  failed_when: false
+  when: inventory_hostname != groups['control_plane_nodes'][0]
+
+- name: Verify node removal from Kubernetes
+  ansible.builtin.shell: "kubectl get node {{ inventory_hostname | lower }}"
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  environment: "{{ kubectl_env }}"
+  register: node_check
+  until: node_check.rc == 1 or node_check.stderr is search("not found")
+  retries: 6
+  delay: 10
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname != groups['control_plane_nodes'][0]
+
+- name: Check for uninstall scripts
+  ansible.builtin.stat:
+    path: "/usr/local/bin/{{ item }}"
+  register: script_check
+  loop:
+    - rke2-uninstall.sh
+    - rke2-killall.sh
+  become: true
+
+- name: Uninstall RKE2 if scripts exist
+  ansible.builtin.shell: |
+    /usr/local/bin/rke2-killall.sh
+    sleep 5
+    /usr/local/bin/rke2-uninstall.sh
+  when: 
+    - script_check.results is defined
+    - script_check.results | selectattr('stat.exists') | list | length == 2
+  become: true
+
+- name: Ensure RKE2 directories exist after uninstall
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  with_items: "{{ rke2_dirs }}"
+  become: true
+
+- name: Configure node
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+
+- name: Install RKE2
+  ansible.builtin.shell: |
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE={{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }} sh -
+  args:
+    creates: /usr/local/bin/rke2
+  become: true
+
+- name: Start RKE2 service
+  ansible.builtin.systemd:
+    name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
+    state: started
+    enabled: true
+  become: true
+
+- name: Wait for node to be ready
+  ansible.builtin.shell: |
+    kubectl get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+  environment: "{{ kubectl_env }}"
+  register: node_ready
+  until: node_ready.stdout == "True"
+  retries: 30
+  delay: 10
+  changed_when: false
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"

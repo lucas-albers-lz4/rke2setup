@@ -1,0 +1,11 @@
+---
+- name: Rebuild RKE2 Node
+  hosts: all
+  gather_facts: true
+  become: true
+  
+  tasks:
+    - name: Include node rebuild tasks
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: rebuild_node
