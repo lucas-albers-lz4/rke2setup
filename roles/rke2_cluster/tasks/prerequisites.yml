@@ -86,7 +86,7 @@
     content: |
       br_netfilter
       overlay
-    mode: '0644'
+    mode: "0644"
   become: true
 
 - name: Configure kernel parameters
@@ -96,13 +96,14 @@
     state: present
     reload: true
   loop:
-    - { key: 'vm.swappiness', value: '0' }
-    - { key: 'vm.overcommit_memory', value: '1' }
-    - { key: 'net.ipv4.ip_forward', value: '1' }
-    - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
-    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+    - { key: "vm.swappiness", value: "0" }
+    - { key: "vm.overcommit_memory", value: "1" }
+    - { key: "net.ipv4.ip_forward", value: "1" }
+    - { key: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
 
 - name: Manage UFW firewall
+  become: true
   block:
     - name: Stop UFW service
       ansible.builtin.systemd:
@@ -122,4 +123,3 @@
       ansible.builtin.debug:
         msg: "UFW Status: disabled"
       when: not (ufw_stop.failed | default(true))
-  become: true

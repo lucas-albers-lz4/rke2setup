@@ -1,6 +1,6 @@
 ---
 grafana:
-  adminPassword: "admin"  # Change this in production
+  adminPassword: "admin" # Change this in production
   persistence:
     enabled: true
     size: 10Gi
@@ -50,4 +50,4 @@ additionalPrometheusRulesMap:
   rule-name:
     groups:
       - name: custom-rules
-        rules: []  # Add custom rules as needed
+        rules: [] # Add custom rules as needed

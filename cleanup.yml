@@ -34,7 +34,7 @@
 
     - name: Reload systemd
       ansible.builtin.systemd:
-        daemon_reload: yes
+        daemon_reload: true
 
     - name: Clean containerd state
       block:
@@ -54,7 +54,7 @@
         - name: Wait for processes to terminate
           ansible.builtin.wait_for:
             timeout: 5
-          
+
         - name: Clean containerd directories
           ansible.builtin.file:
             path: "{{ item }}"
@@ -67,7 +67,7 @@
           failed_when: false
 
     - name: Run RKE2 uninstall script if exists
-      ansible.builtin.command: 
+      ansible.builtin.command:
         cmd: /usr/local/bin/rke2-uninstall.sh
         removes: /usr/local/bin/rke2-uninstall.sh
       failed_when: false
@@ -89,7 +89,7 @@
     - name: Pause to allow processes to terminate
       ansible.builtin.wait_for:
         timeout: 10
-        
+
     - name: Remove RKE2 configuration and data directories
       ansible.builtin.file:
         path: "{{ item }}"

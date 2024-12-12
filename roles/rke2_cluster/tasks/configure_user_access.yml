@@ -1,6 +1,6 @@
 ---
 - name: Wait for kubeconfig to be generated
-  wait_for:
+  ansible.builtin.wait_for:
     path: "{{ paths.rke2.kubeconfig }}"
     state: present
     timeout: 300

@@ -21,7 +21,7 @@
 
     - name: Configure additional control plane nodes
       ansible.builtin.include_tasks: additional_control_planes.yml
-      when: 
+      when:
         - inventory_hostname != groups['control_plane_nodes'][0]
         - inventory_hostname in groups['control_plane_nodes']
 
@@ -63,7 +63,7 @@
   ansible.builtin.systemd:
     name: rke2-server
     state: started
-    enabled: yes
+    enabled: true
   become: true
   register: server_start
   until: server_start is success

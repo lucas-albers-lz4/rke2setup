@@ -1,6 +1,6 @@
 ---
 - name: Wait for kubeconfig
-  wait_for:
+  ansible.builtin.wait_for:
     path: "{{ paths.base.rke2.kubeconfig }}"
     state: present
     timeout: 300
@@ -13,7 +13,7 @@
       ansible.builtin.copy:
         src: "{{ paths.base.rke2.kubeconfig }}"
         dest: "{{ paths.user.config }}"
-        remote_src: yes
+        remote_src: true
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: "{{ file_modes.file.secure }}"
@@ -21,6 +21,6 @@
     - name: Update server address
       ansible.builtin.replace:
         path: "{{ paths.user.config }}"
-        regexp: 'server: https://127.0.0.1:6443'
-        replace: 'server: https://{{ first_server_ip }}:6443'
+        regexp: "server: https://127.0.0.1:6443"
+        replace: "server: https://{{ first_server_ip }}:6443"
       when: inventory_hostname != groups['control_plane_nodes'][0]

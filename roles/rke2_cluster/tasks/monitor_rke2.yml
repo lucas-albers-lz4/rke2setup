@@ -2,30 +2,30 @@
 - name: Initialize RKE2 state tracking
   ansible.builtin.set_fact:
     rke2_states:
-      INIT: 
+      INIT:
         pattern: "Starting rke2"
         completed: false
-        timestamp: null
-      ETCD: 
+        timestamp:
+      ETCD:
         pattern: "etcd data store connection OK"
         completed: false
-        timestamp: null
+        timestamp:
       API_SERVER:
         pattern: "Kube API server is now running"
         completed: false
-        timestamp: null
+        timestamp:
       CONTROLLERS:
         pattern: "Starting managed etcd node metadata controller"
         completed: false
-        timestamp: null
+        timestamp:
       RUNNING:
         pattern: "rke2 is up and running"
         completed: false
-        timestamp: null
+        timestamp:
     rke2_errors: []
 
 - name: Check existing journal for completed states
-  shell: |
+  ansible.builtin.shell: |
     #!/bin/bash
     journalctl -u rke2-server --no-pager -n 1000 | while read -r line; do
       timestamp=$(echo "$line" | awk '{print $1" "$2" "$3}')
@@ -59,16 +59,12 @@
 
 - name: Check if service is already running successfully
   ansible.builtin.set_fact:
-    rke2_fully_running: "{{ 
-      rke2_states.RUNNING.completed and 
-      not (existing_states.stdout_lines | select('match', '^ERROR.*') | list)
-    }}"
+    rke2_fully_running: "{{ rke2_states.RUNNING.completed and not (existing_states.stdout_lines | select('match', '^ERROR.*') | list) }}"
 
 - name: Display current RKE2 state
-  debug:
+  ansible.builtin.debug:
     msg: |
       Current RKE2 States:
       {% for state, info in rke2_states.items() %}
       {{ state }}: {{ info }}
       {% endfor %}
-

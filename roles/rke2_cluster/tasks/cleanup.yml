@@ -1,6 +1,6 @@
 ---
 - name: Stop RKE2 services
-  systemd:
+  ansible.builtin.systemd:
     name: "{{ item }}"
     state: stopped
     enabled: false
@@ -14,7 +14,7 @@
     timeout: "{{ timeout_short }}"
 
 - name: Remove RKE2 files and directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
@@ -28,4 +28,3 @@
     - /run/flannel
     - /etc/cni
     - /var/lib/cni
-

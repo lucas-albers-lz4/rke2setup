@@ -6,7 +6,7 @@
         cmd: "{{ commands.kubectl }} get --raw /healthz/etcd"
       register: etcd_health
       until: etcd_health.stdout == "ok"
-      retries: 30  # 5 minutes with 10s delay
+      retries: 30 # 5 minutes with 10s delay
       delay: 10
       changed_when: false
       environment:
@@ -21,7 +21,7 @@
 
     - name: Debug etcd pods status
       ansible.builtin.debug:
-        msg: 
+        msg:
           - "Etcd pods status: {{ etcd_pods.stdout_lines }}"
           - "Expected count: {{ groups['control_plane_nodes'] | length }}"
 
@@ -29,11 +29,12 @@
       ansible.builtin.assert:
         that:
           - "etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['control_plane_nodes'] | length"
-        fail_msg: "Not all etcd pods are running. Found {{ etcd_pods.stdout.split() | select('match', '^Running$') | list | length }} running pods, expected {{ groups['control_plane_nodes'] | length }}"
+        fail_msg: "Not all etcd pods are running. Found {{ etcd_pods.stdout.split() | select('match', '^Running$') | list | length }} running pods, expected {{ groups['control_plane_nodes']
+          | length }}"
 
     - name: Set control plane validation flag
       ansible.builtin.set_fact:
         control_plane_validated: true
-      when: 
+      when:
         - etcd_health.stdout == "ok"
         - etcd_pods.stdout.split() | select('match', '^Running$') | list | length == groups['control_plane_nodes'] | length

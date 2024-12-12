@@ -1,7 +1,8 @@
+---
 - name: Verify RKE2 installation result
   block:
     - name: Check installation script result
-      assert:
+      ansible.builtin.assert:
         that:
           - install_result.rc == 0
           - "'unpacking tarball file to /usr/local' in install_result.stdout"
@@ -14,7 +15,7 @@
       when: install_result is defined
 
     - name: Check essential RKE2 files
-      stat:
+      ansible.builtin.stat:
         path: "{{ item }}"
       loop:
         - /usr/local/bin/rke2
@@ -23,25 +24,25 @@
       register: rke2_files
 
     - name: Debug file status
-      debug:
+      ansible.builtin.debug:
         msg: "File {{ item.item }} exists: {{ item.stat.exists }}"
       loop: "{{ rke2_files.results }}"
 
     - name: Start RKE2 service
-      systemd:
+      ansible.builtin.systemd:
         name: rke2-server
         state: started
-        enabled: yes
-        daemon_reload: yes
+        enabled: true
+        daemon_reload: true
       become: true
       register: service_start
 
     - name: Debug service status
-      debug:
+      ansible.builtin.debug:
         var: service_start
 
     - name: Wait for RKE2 files to be created
-      wait_for:
+      ansible.builtin.wait_for:
         path: "{{ item }}"
         state: present
         timeout: "{{ timeout_standard }}"
@@ -51,47 +52,47 @@
       register: wait_result
 
     - name: Verify all required files exist
-      assert:
-        that: 
+      ansible.builtin.assert:
+        that:
           - rke2_files.results | map(attribute='stat.exists') | select('true') | list | length == rke2_files.results | length
         msg: "Some required RKE2 files are missing"
       register: verification_result
-      ignore_errors: yes  # Continue for debugging
+      ignore_errors: true # Continue for debugging
 
     - name: Display verification failure details
       when: not verification_result.failed
-      debug:
-        msg: 
+      ansible.builtin.debug:
+        msg:
           - "Missing files:"
           - "{{ rke2_files.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
 
     - name: Check service initialization
       block:
         - name: Create diagnostics file
-          file:
+          ansible.builtin.file:
             path: /tmp/rke2-diagnostics.log
             state: touch
-            mode: '0644'
+            mode: "0644"
           become: true
 
         - name: Collect service initialization details
-          shell: |
+          ansible.builtin.shell: |
             echo -e "\n=== Service Initialization Details ===" >> /tmp/rke2-diagnostics.log
             systemctl show rke2-server --property=StatusText,LoadState,ActiveState >> /tmp/rke2-diagnostics.log
           become: true
           register: service_init
 
         - name: Display service initialization details
-          command: cat /tmp/rke2-diagnostics.log
+          ansible.builtin.command: cat /tmp/rke2-diagnostics.log
           register: diagnostics_output
           become: true
 
         - name: Show diagnostics
-          debug:
+          ansible.builtin.debug:
             msg: "{{ diagnostics_output.stdout_lines }}"
 
         - name: Clean up diagnostics file
-          file:
+          ansible.builtin.file:
             path: /tmp/rke2-diagnostics.log
             state: absent
           become: true

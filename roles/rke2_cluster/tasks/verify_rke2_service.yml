@@ -7,7 +7,7 @@
       register: service_status
 
     - name: Fail fast if service isn't running
-      fail:
+      ansible.builtin.fail:
         msg: |
           RKE2 service failed to start properly.
           Status: {{ service_status.status.SubState }}
