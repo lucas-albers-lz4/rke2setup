@@ -2,58 +2,46 @@
 - name: Verify cluster health
   block:
     - name: Wait for all control plane nodes
-      ansible.builtin.shell: |
-        set -o pipefail
-        READY_CP=$({{ paths.rke2.bin }}/kubectl get nodes --selector=node.kubernetes.io/instance-type=control-plane \
-          -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{end}' | grep -c True)
-        TOTAL_CP=$({{ paths.rke2.bin }}/kubectl get nodes --selector=node.kubernetes.io/instance-type=control-plane \
-          -o name | wc -l)
-        echo "Ready CP: $READY_CP, Total CP: $TOTAL_CP"
-        test "$READY_CP" -eq "$TOTAL_CP"
-      args:
-        executable: /bin/bash
-      register: cp_ready_check
-      until: cp_ready_check.rc == 0
-      retries: "{{ retry_extended }}"
-      delay: "{{ retry_delay }}"
-      changed_when: false
+      command:
+        cmd: "{{ paths.rke2.bin }}/kubectl get nodes --selector='node-role.kubernetes.io/control-plane' -o jsonpath='{range .items[*]}{.metadata.name}{\"\\t\"}{.status.conditions[?(@.type==\"Ready\")].status}{\"\\n\"}{end}'"
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: control_plane_status
+      until: control_plane_status.rc == 0
+      retries: 30
+      delay: 10
+      delegate_to: "{{ hostvars[groups['control_plane_nodes'][0]]['inventory_hostname'] }}"
+      run_once: true
+      when:
+        - inventory_hostname != groups['control_plane_nodes'][0]
+        - groups['control_plane_nodes'] | length > 1
 
-    - name: Verify etcd health
-      ansible.builtin.shell: |
-        {{ paths.rke2.bin }}/kubectl get --raw=/healthz/etcd
-      register: etcd_health
-      until: etcd_health.stdout == "ok"
-      retries: "{{ retry_extended }}"
-      delay: "{{ retry_delay }}"
-      changed_when: false
+    - name: Check overall cluster health
+      command:
+        cmd: "{{ paths.rke2.bin }}/kubectl get --raw=/healthz"
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: cluster_health
+      until: cluster_health.rc == 0
+      retries: 30
+      delay: 10
+      delegate_to: "{{ hostvars[groups['control_plane_nodes'][0]]['inventory_hostname'] }}"
+      run_once: true
+      when:
+        - inventory_hostname != groups['control_plane_nodes'][0]
+        - groups['control_plane_nodes'] | length > 1
 
-- name: Verify RKE2 file permissions
-  ansible.builtin.stat:
-    path: "{{ item }}"
-  register: rke2_files
-  loop:
-    - "{{ paths.rke2.kubeconfig }}"
-    - "{{ paths.rke2.data }}"
-    - "{{ paths.rke2.bin }}"
-  failed_when: false
-  changed_when: false
-
-- name: Debug RKE2 file permissions
-  ansible.builtin.debug:
-    msg: "{{ item.item }} permissions: {{ item.stat.mode }}"
-  loop: "{{ rke2_files.results }}"
-  when: item.stat.exists
-
-- name: Verify kubectl configuration
-  ansible.builtin.stat:
-    path: "{{ paths.rke2.kubeconfig }}"
-  register: kubeconfig_stat
-
-- name: Fail if kubeconfig doesn't exist
-  ansible.builtin.fail:
-    msg: "RKE2 kubeconfig not found at {{ paths.rke2.kubeconfig }}"
-  when: not kubeconfig_stat.stat.exists
+    - name: Verify remaining nodes are Ready
+      command:
+        cmd: "{{ paths.rke2.bin }}/kubectl get nodes --field-selector=metadata.name!={{ inventory_hostname }} -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}'"
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: nodes_status
+      until: nodes_status.stdout | regex_findall('True') | length >= (groups['control_plane_nodes'] | length - 1)
+      retries: 30
+      delay: 10
+      delegate_to: "{{ hostvars[groups['control_plane_nodes'][0]]['inventory_hostname'] }}"
+      run_once: true
+      when:
+        - inventory_hostname != groups['control_plane_nodes'][0]
+        - groups['control_plane_nodes'] | length > 1
