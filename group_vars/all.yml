@@ -1,0 +1,9 @@
+# Define the standardized kubectl command with proper paths
+kube_cmd: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml 
+
+# ETCD command configuration
+etcdctl_params: >-
+  --endpoints=https://127.0.0.1:2379
+  --cacert=/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
+  --cert=/var/lib/rancher/rke2/server/tls/etcd/server-client.crt
+  --key=/var/lib/rancher/rke2/server/tls/etcd/server-client.key
