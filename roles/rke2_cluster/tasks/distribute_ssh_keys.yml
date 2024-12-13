@@ -1,0 +1,21 @@
+---
+- name: Read local public key
+  ansible.builtin.slurp:
+    src: "{{ ssh_public_key_path | expanduser }}"
+  register: pubkey_content
+  delegate_to: localhost
+  run_once: true
+
+- name: Ensure .ssh directory exists on all nodes
+  ansible.builtin.file:
+    path: "~/.ssh"
+    state: directory
+    mode: "0700"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: Add public key to authorized_keys on all nodes
+  ansible.posix.authorized_key:
+    user: "{{ ansible_user }}"
+    state: present
+    key: "{{ pubkey_content.content | b64decode }}"

@@ -1,16 +1,7 @@
 ---
 - name: Set common variables
   ansible.builtin.set_fact:
-    etcd_base_cmd: >-
-      export PATH=/var/lib/rancher/rke2/bin:$PATH;
-      kubectl exec -n kube-system etcd-{{ groups['control_plane_nodes'][0] | lower }} -- etcdctl
-      --endpoints=https://127.0.0.1:2379
-      --cacert=/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
-      --cert=/var/lib/rancher/rke2/server/tls/etcd/server-client.crt
-      --key=/var/lib/rancher/rke2/server/tls/etcd/server-client.key
-    kubectl_env:
-      KUBECONFIG: /etc/rancher/rke2/rke2.yaml
-      PATH: /var/lib/rancher/rke2/bin:{{ ansible_env.PATH }}
+    etcd_base_cmd: "{{ kube_cmd }} exec -n kube-system etcd-{{ groups['control_plane_nodes'][0] | lower }} -- etcdctl {{ etcdctl_params }}"
     rke2_dirs:
       - /etc/rancher/rke2
       - /var/lib/rancher/rke2/bin
@@ -40,41 +31,60 @@
   loop: "{{ rke2_dirs }}"
 
 - name: Debug etcd member list
-  ansible.builtin.shell: "{{ etcd_base_cmd }} member list"
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
-  become: true
-  environment: "{{ kubectl_env }}"
+  ansible.builtin.shell: |
+    {{ etcd_base_cmd }} member list | awk -F',' '{printf "%-12s %-10s %-15s %-25s %-25s %s\n", $1, $2, $3, $4, $5, $6}'
   register: etcd_members
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  changed_when: false
+  when: 
+    - inventory_hostname in groups['control_plane_nodes']
+    - groups['control_plane_nodes'] | length > 0
+
+- name: Display etcd members
+  ansible.builtin.debug:
+    msg: |
+      Current etcd members:
+      ID            Status     Name          Peer URL                   Client URL                 Leader
+      {% for line in etcd_members.stdout_lines %}
+      {{ line }}
+      {% endfor %}
+  when: inventory_hostname in groups['control_plane_nodes']
 
 - name: Get etcd member ID for the node
-  ansible.builtin.shell: "{{ etcd_base_cmd }} member list | grep {{ inventory_hostname | lower }} | cut -d',' -f1"
+  ansible.builtin.shell: |
+    {{ kube_cmd }} exec -n kube-system etcd-k1 -- etcdctl {{ etcdctl_params }} member list | grep {{ inventory_hostname }} | cut -d',' -f1
   register: etcd_member_id
   delegate_to: "{{ groups['control_plane_nodes'][0] }}"
   become: true
-  environment: "{{ kubectl_env }}"
   when: inventory_hostname in groups['control_plane_nodes']
 
 - name: Remove etcd member
   ansible.builtin.shell: "{{ etcd_base_cmd }} member remove {{ etcd_member_id.stdout }}"
   delegate_to: "{{ groups['control_plane_nodes'][0] }}"
   become: true
-  environment: "{{ kubectl_env }}"
   when: 
     - inventory_hostname in groups['control_plane_nodes']
     - etcd_member_id.stdout is defined
     - etcd_member_id.stdout != ""
 
 - name: Verify etcd member removal
-  ansible.builtin.command: "{{ etcd_base_cmd }} member list"
-  register: etcd_member_list
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
-  become: true
-  environment: "{{ kubectl_env }}"
-  changed_when: false
   when: 
     - inventory_hostname in groups['control_plane_nodes']
     - etcd_member_id.stdout is defined
     - etcd_member_id.stdout != ""
+  ansible.builtin.shell: |
+    {{ kube_cmd }} exec -n kube-system etcd-k1 -- etcdctl {{ etcdctl_params }} member list | grep -v {{ inventory_hostname }}
+  register: etcd_members
+  until: etcd_members.rc == 0
+  retries: 30
+  delay: 10
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  changed_when: false
+
+- name: Skip etcd verification
+  ansible.builtin.debug:
+    msg: "Skipping etcd verification - node {{ inventory_hostname }} not found in etcd member list"
+  when: inventory_hostname in groups['control_plane_nodes'] and etcd_member_id.stdout == ""
 
 - name: Fail if node still exists in etcd
   ansible.builtin.fail:
@@ -86,18 +96,16 @@
     - inventory_hostname | lower in (etcd_member_list.stdout | default(''))
 
 - name: Delete node from Kubernetes
-  ansible.builtin.shell: "kubectl delete node {{ inventory_hostname | lower }}"
+  ansible.builtin.shell: "{{ kube_cmd }} delete node {{ inventory_hostname | lower }}"
   delegate_to: "{{ groups['control_plane_nodes'][0] }}"
   become: true
-  environment: "{{ kubectl_env }}"
   failed_when: false
   when: inventory_hostname != groups['control_plane_nodes'][0]
 
 - name: Verify node removal from Kubernetes
-  ansible.builtin.shell: "kubectl get node {{ inventory_hostname | lower }}"
+  ansible.builtin.shell: "{{ kube_cmd }} get node {{ inventory_hostname | lower }}"
   delegate_to: "{{ groups['control_plane_nodes'][0] }}"
   become: true
-  environment: "{{ kubectl_env }}"
   register: node_check
   until: node_check.rc == 1 or node_check.stderr is search("not found")
   retries: 6
@@ -158,13 +166,54 @@
     enabled: true
   become: true
 
+- name: Wait for node to appear in cluster
+  ansible.builtin.shell: |
+    {{ kube_cmd }} get nodes {{ inventory_hostname | lower }} -o name
+  register: node_exists
+  until: node_exists.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+
 - name: Wait for node to be ready
   ansible.builtin.shell: |
-    kubectl get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-  environment: "{{ kubectl_env }}"
+    {{ kube_cmd }} get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
   register: node_ready
   until: node_ready.stdout == "True"
   retries: 30
   delay: 10
   changed_when: false
   delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  when: node_exists.rc == 0
+
+- name: Show node status
+  ansible.builtin.shell: |
+    {{ kube_cmd }} get nodes {{ inventory_hostname | lower }} -o wide
+  register: node_status
+  changed_when: false
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+  when: node_exists.rc == 0
+
+- name: Wait for all control plane nodes except current node
+  shell: |
+    {{ kube_cmd }} get nodes --selector='node-role.kubernetes.io/control-plane' --no-headers | grep -v {{ inventory_hostname }} | grep Ready
+  register: control_plane_nodes
+  until: control_plane_nodes.rc == 0
+  retries: 30
+  delay: 10
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+
+- name: Wait for etcd health after node removal
+  when: inventory_hostname in groups['control_plane_nodes']
+  ansible.builtin.command:
+    cmd: "{{ etcd_base_cmd }} endpoint health"
+  register: etcd_health
+  until: etcd_health.rc == 0
+  retries: 30
+  delay: 10
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  changed_when: false

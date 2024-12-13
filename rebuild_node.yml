@@ -1,6 +1,7 @@
 ---
 - name: Rebuild RKE2 Node
   hosts: all
+  serial: 1
   gather_facts: true
   become: true
   
