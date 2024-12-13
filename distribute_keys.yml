@@ -1,0 +1,74 @@
+---
+- name: Distribute SSH Keys
+  hosts: all
+  gather_facts: false
+  vars:
+    ssh_public_key_path: "~/.ssh/id_ed25519.pub"
+  
+  pre_tasks:
+    - name: Gather minimal facts
+      ansible.builtin.setup:
+        gather_subset:
+          - '!all'
+          - 'network'
+        filter:
+          - ansible_host
+          - ansible_user
+      
+    - name: Verify SSH public key exists locally
+      ansible.builtin.stat:
+        path: "{{ ssh_public_key_path | expanduser }}"
+      delegate_to: localhost
+      register: ssh_key
+      run_once: true
+      failed_when: not ssh_key.stat.exists
+
+    - name: Get existing host keys
+      ansible.builtin.shell: "ssh-keygen -F {{ ansible_host }} -f ~/.ssh/known_hosts"
+      delegate_to: localhost
+      register: existing_keys
+      changed_when: false
+      failed_when: false
+
+    - name: Get remote host key fingerprints
+      ansible.builtin.shell: |
+        ssh-keyscan -H {{ ansible_host }} | ssh-keygen -lf - | awk '{print $2}' | sort
+      delegate_to: localhost
+      register: remote_fingerprints
+      changed_when: false
+      failed_when: false
+
+    - name: Get existing key fingerprints
+      ansible.builtin.shell: |
+        ssh-keygen -F {{ ansible_host }} -f ~/.ssh/known_hosts | ssh-keygen -lf - | awk '{print $2}' | sort
+      delegate_to: localhost
+      register: existing_fingerprints
+      changed_when: false
+      failed_when: false
+      when: existing_keys.rc == 0
+
+    - name: Remove existing host keys
+      ansible.builtin.command: "ssh-keygen -R {{ ansible_host }}"
+      delegate_to: localhost
+      when: >
+        existing_keys.rc == 0 and
+        (existing_fingerprints.stdout_lines | sort | join('\n') != 
+         remote_fingerprints.stdout_lines | sort | join('\n'))
+      changed_when: true
+
+    - name: Add new host keys
+      ansible.builtin.known_hosts:
+        name: "{{ ansible_host }}"
+        key: "{{ lookup('pipe', 'ssh-keyscan -H ' + ansible_host) }}"
+        state: present
+      delegate_to: localhost
+      when: >
+        existing_keys.rc != 0 or
+        (existing_fingerprints.stdout_lines | sort | join('\n') != 
+         remote_fingerprints.stdout_lines | sort | join('\n'))
+  
+  tasks:
+    - name: Include SSH key distribution tasks
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: distribute_ssh_keys
