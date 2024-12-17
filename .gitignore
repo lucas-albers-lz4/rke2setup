@@ -30,8 +30,13 @@ generated_configs/
 .coverage
 inventory/group_vars/all.yml
 
+
+terraform/.terraform.lock.*
+terraform/.terraform/providers/*
+terraform/terraform.tfvars
+
 # Local .terraform directories
-**/.terraform/*
+*/.terraform/*
 
 # .tfstate files
 *.tfstate
