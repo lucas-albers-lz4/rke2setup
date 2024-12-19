@@ -1,5 +1,40 @@
 ---
-- name: Deploy Six Node RKE2 Cluster
+- name: Clean Existing RKE2 Installation
+  hosts: six_node_cluster
+  gather_facts: false
+  become: true
+  serial: 1
+  
+  tasks:
+
+
+    - name: Stop RKE2 services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - rke2-server
+        - rke2-agent
+      failed_when: false
+
+    - name: Run uninstall scripts if they exist
+      ansible.builtin.shell: |
+        if [ -f /usr/local/bin/rke2-killall.sh ]; then
+          /usr/local/bin/rke2-killall.sh
+        fi
+        if [ -f /usr/local/bin/rke2-uninstall.sh ]; then
+          /usr/local/bin/rke2-uninstall.sh
+        fi
+      failed_when: false
+
+
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+- name: Deploy New RKE2 Cluster
   hosts: six_node_cluster
   gather_facts: true
   strategy: linear
@@ -7,11 +42,26 @@
   pre_tasks:
     - name: Verify control plane nodes are defined
       ansible.builtin.assert:
-        that: groups['control_plane_nodes'] | length > 0
-        fail_msg: "No control plane nodes defined"
+        that: 
+          - groups['control_plane_nodes'] | length >= 3
+          - groups['worker_nodes'] | length >= 1
+        fail_msg: "Insufficient nodes defined. Need at least 3 control plane and 1 worker node"
       run_once: true
       delegate_to: localhost
       become: false
 
+    - name: Verify node connectivity
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+      register: node_check
+      retries: 3
+      delay: 10
+      until: node_check is success
+
   roles:
     - role: rke2_cluster
+      vars:
+        retry_standard: 30
+        retry_extended: 60
+        retry_delay: 10
+        timeout_startup: 600

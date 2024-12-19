@@ -32,16 +32,32 @@
         - groups['control_plane_nodes'] | length > 1
 
     - name: Verify remaining nodes are Ready
-      command:
-        cmd: "{{ paths.rke2.bin }}/kubectl get nodes --field-selector=metadata.name!={{ inventory_hostname }} -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}'"
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-      register: nodes_status
-      until: nodes_status.stdout | regex_findall('True') | length >= (groups['control_plane_nodes'] | length - 1)
+      ansible.builtin.shell: |
+        expected_cp_count="{{ groups['control_plane_nodes'] | length }}"
+        current_cp_count="$({{ kube_cmd }} get nodes --selector=node-role.kubernetes.io/control-plane --no-headers | wc -l)"
+
+        if [ "${current_cp_count}" -eq 1 ] && [ "${expected_cp_count}" -gt 1 ]; then
+          first_node_status="$({{ kube_cmd }} get nodes {{ groups['control_plane_nodes'][0] }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')"
+          if [ "${first_node_status}" = "True" ]; then
+            echo "First control plane node is ready, proceeding with second node setup"
+            exit 0
+          fi
+          exit 1
+        fi
+
+        {{ kube_cmd }} get nodes --selector=node-role.kubernetes.io/control-plane --no-headers | grep -v {{ inventory_hostname }} | grep Ready
+      register: remaining_nodes
+      until: remaining_nodes.rc == 0
       retries: 30
       delay: 10
-      delegate_to: "{{ hostvars[groups['control_plane_nodes'][0]]['inventory_hostname'] }}"
-      run_once: true
-      when:
-        - inventory_hostname != groups['control_plane_nodes'][0]
-        - groups['control_plane_nodes'] | length > 1
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
+
+    - name: Display node verification status
+      ansible.builtin.debug:
+        msg: |
+          Current node: {{ inventory_hostname }}
+          Expected control plane count: {{ groups['control_plane_nodes'] | length }}
+          Found control plane nodes:
+          {{ remaining_nodes.stdout_lines | default([]) }}
+      when: remaining_nodes is defined

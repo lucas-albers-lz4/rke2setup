@@ -99,25 +99,16 @@
           - "Service Status: {{ service_status.status.SubState }}"
           - "Active Since: {{ service_status.status.ActiveEnterTimestamp }}"
   rescue:
-    - name: Collect failure information
-      block:
-        - name: Get service status
-          ansible.builtin.command: systemctl status rke2-server
-          register: service_status
-          ignore_errors: true
+    - name: Get service status
+      ansible.builtin.command: systemctl status rke2-server
+      register: service_status
+      ignore_errors: true
 
-        - name: Get recent logs
-          ansible.builtin.command: journalctl -u rke2-server -n 50
-          register: service_logs
-          ignore_errors: true
-
-        - name: Display failure information
-          ansible.builtin.debug:
-            msg:
-              - "=== Service Status ==="
-              - "{{ service_status.stdout_lines | default([]) }}"
-              - "=== Recent Logs ==="
-              - "{{ service_logs.stdout_lines | default([]) }}"
+    - name: Display failure information
+      ansible.builtin.debug:
+        msg:
+          - "=== Service Status ==="
+          - "{{ service_status.stdout_lines | default([]) }}"
 
     - name: Fail with error
       ansible.builtin.fail:

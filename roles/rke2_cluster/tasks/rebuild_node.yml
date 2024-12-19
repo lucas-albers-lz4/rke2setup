@@ -8,7 +8,7 @@
             groups['control_plane_nodes'] | 
             reject('equalto', inventory_hostname) | 
             first 
-          }}
+          asdfaf
       when: groups['control_plane_nodes'] | length > 1
 
     - name: Fallback Delegation Strategy
@@ -29,6 +29,7 @@
       - /etc/rancher/rke2
       - /var/lib/rancher/rke2/bin
       - /usr/local/bin
+    rebuilding_first_node: "{{ inventory_hostname == groups['control_plane_nodes'][0] }}"
 
 - name: Verify disk space requirements before node rebuild
   block:
