@@ -1,4 +1,27 @@
 ---
+- name: Select Delegation Target with Fallback
+  block:
+    - name: Try Primary Delegation
+      ansible.builtin.set_fact:
+        delegation_target: >-
+          {{ 
+            groups['control_plane_nodes'] | 
+            reject('equalto', inventory_hostname) | 
+            first 
+          asdfaf
+      when: groups['control_plane_nodes'] | length > 1
+
+    - name: Fallback Delegation Strategy
+      block:
+        - name: Warn About Limited Delegation Options
+          ansible.builtin.debug:
+            msg: "Warning: Limited delegation targets available"
+        
+        - name: Manual Intervention Recommendation
+          ansible.builtin.fail:
+            msg: "Cannot safely delegate cluster operations. Manual intervention required."
+      when: groups['control_plane_nodes'] | length <= 1
+
 - name: Set common variables
   ansible.builtin.set_fact:
     etcd_base_cmd: "{{ kube_cmd }} exec -n kube-system etcd-{{ groups['control_plane_nodes'][0] | lower }} -- etcdctl {{ etcdctl_params }}"
@@ -6,16 +29,46 @@
       - /etc/rancher/rke2
       - /var/lib/rancher/rke2/bin
       - /usr/local/bin
+    rebuilding_first_node: "{{ inventory_hostname == groups['control_plane_nodes'][0] }}"
+
+- name: Verify disk space requirements before node rebuild
+  block:
+    - name: Calculate available root filesystem space
+      ansible.builtin.set_fact:
+        root_available_space: >-
+          {{ (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available / 1024 / 1024 }}
+
+    - name: Determine space requirement
+      ansible.builtin.set_fact:
+        required_space: "{{ 3400 if not ansible_mounts | selectattr('mount', 'equalto', '/var/lib/rancher/rke2') | list else 1000 }}"
+
+    - name: Validate disk space availability
+      ansible.builtin.assert:
+        that:
+          - root_available_space | float >= required_space | float
+        fail_msg: >
+          Insufficient disk space for RKE2 installation.
+          {% if not ansible_mounts | selectattr('mount', 'equalto', '/var/lib/rancher/rke2') | list %}
+          Required: At least 3.4GB for new installation
+          {% else %}
+          Required: At least 1GB for existing installation
+          {% endif %}
+          Available space: {{ root_available_space | float | round(2) }}MB
+  
+  when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+- name: Include preflight checks
+  ansible.builtin.include_tasks: preflight.yml
 
 - name: Verify cluster health before rebuild
   ansible.builtin.include_tasks: verify_cluster.yml
   when: inventory_hostname != groups['control_plane_nodes'][0]
 
-- name: Get existing token from first control plane
+- name: Get existing token from control plane
   ansible.builtin.slurp:
     src: /etc/rancher/rke2/config.yaml
   register: existing_config
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
 
 - name: Set token from existing cluster
@@ -32,35 +85,28 @@
 
 - name: Debug etcd member list
   ansible.builtin.shell: |
-    {{ etcd_base_cmd }} member list | awk -F',' '{printf "%-12s %-10s %-15s %-25s %-25s %s\n", $1, $2, $3, $4, $5, $6}'
+    {{ etcd_base_cmd }} member list | column -t
   register: etcd_members
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   changed_when: false
-  when: 
-    - inventory_hostname in groups['control_plane_nodes']
-    - groups['control_plane_nodes'] | length > 0
 
 - name: Display etcd members
   ansible.builtin.debug:
     msg: |
       Current etcd members:
-      ID            Status     Name          Peer URL                   Client URL                 Leader
-      {% for line in etcd_members.stdout_lines %}
-      {{ line }}
-      {% endfor %}
-  when: inventory_hostname in groups['control_plane_nodes']
+      {{ etcd_members.stdout_lines | join('\n') }}
 
 - name: Get etcd member ID for the node
   ansible.builtin.shell: |
-    {{ kube_cmd }} exec -n kube-system etcd-k1 -- etcdctl {{ etcdctl_params }} member list | grep {{ inventory_hostname }} | cut -d',' -f1
+    {{ kube_cmd }} exec -n kube-system etcd-{{ delegation_target | lower }} -- etcdctl {{ etcdctl_params }} member list | grep {{ inventory_hostname }} | cut -d',' -f1
   register: etcd_member_id
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
   when: inventory_hostname in groups['control_plane_nodes']
 
 - name: Remove etcd member
   ansible.builtin.shell: "{{ etcd_base_cmd }} member remove {{ etcd_member_id.stdout }}"
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
   when: 
     - inventory_hostname in groups['control_plane_nodes']
@@ -68,18 +114,30 @@
     - etcd_member_id.stdout != ""
 
 - name: Verify etcd member removal
-  when: 
-    - inventory_hostname in groups['control_plane_nodes']
-    - etcd_member_id.stdout is defined
-    - etcd_member_id.stdout != ""
-  ansible.builtin.shell: |
-    {{ kube_cmd }} exec -n kube-system etcd-k1 -- etcdctl {{ etcdctl_params }} member list | grep -v {{ inventory_hostname }}
-  register: etcd_members
-  until: etcd_members.rc == 0
-  retries: 30
-  delay: 10
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
-  changed_when: false
+  block:
+    - name: Check current etcd members
+      ansible.builtin.shell: |
+        {{ kube_cmd }} exec -n kube-system etcd-{{ delegation_target | lower }} -- etcdctl {{ etcdctl_params }} member list | column -t
+      register: current_etcd_members
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
+
+    - name: Display current etcd members during verification
+      ansible.builtin.debug:
+        msg: |
+          Verifying etcd member removal for {{ inventory_hostname }}
+          Current etcd members:
+          {{ current_etcd_members.stdout_lines | join('\n') }}
+
+    - name: Verify member is removed
+      ansible.builtin.shell: |
+        {{ kube_cmd }} exec -n kube-system etcd-{{ delegation_target | lower }} -- etcdctl {{ etcdctl_params }} member list | grep -v {{ inventory_hostname }}
+      register: etcd_members
+      until: etcd_members.rc == 0
+      retries: 30
+      delay: 10
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
 
 - name: Skip etcd verification
   ansible.builtin.debug:
@@ -97,14 +155,14 @@
 
 - name: Delete node from Kubernetes
   ansible.builtin.shell: "{{ kube_cmd }} delete node {{ inventory_hostname | lower }}"
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
   failed_when: false
   when: inventory_hostname != groups['control_plane_nodes'][0]
 
 - name: Verify node removal from Kubernetes
   ansible.builtin.shell: "{{ kube_cmd }} get node {{ inventory_hostname | lower }}"
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
   register: node_check
   until: node_check.rc == 1 or node_check.stderr is search("not found")
@@ -152,6 +210,20 @@
     group: root
   become: true
 
+- name: Check network connectivity to RKE2 documentation
+  ansible.builtin.uri:
+    url: https://docs.rke2.io/
+    method: GET
+    timeout: 30
+  register: rke2_docs_check
+  failed_when: false
+  become: true
+
+- name: Fail if RKE2 documentation site is unreachable
+  ansible.builtin.fail:
+    msg: "Unable to reach RKE2 documentation site. Network connectivity issue detected."
+  when: rke2_docs_check.status != 200
+
 - name: Install RKE2
   ansible.builtin.shell: |
     curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE={{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }} sh -
@@ -174,27 +246,44 @@
   retries: 30
   delay: 10
   changed_when: false
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
 
 - name: Wait for node to be ready
-  ansible.builtin.shell: |
-    {{ kube_cmd }} get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-  register: node_ready
-  until: node_ready.stdout == "True"
-  retries: 30
-  delay: 10
-  changed_when: false
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
-  become: true
-  when: node_exists.rc == 0
+  block:
+    - name: Extended wait for first control plane node
+      when: rebuilding_first_node
+      ansible.builtin.pause:
+        seconds: 180
+      
+    - name: Check node readiness
+      ansible.builtin.shell: |
+        {{ kube_cmd }} get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: node_ready
+      until: >-
+        node_ready.stdout == "True" or
+        (rebuilding_first_node and node_ready.stdout != "")
+      retries: "{{ 60 if rebuilding_first_node else 30 }}"
+      delay: "{{ 20 if rebuilding_first_node else 10 }}"
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
+
+    - name: Display node status
+      ansible.builtin.debug:
+        msg: "Current node status: {{ node_ready.stdout }}"
+      when: rebuilding_first_node
+
+    - name: Wait additional time for first control plane stabilization
+      when: rebuilding_first_node
+      ansible.builtin.pause:
+        seconds: 120
 
 - name: Show node status
   ansible.builtin.shell: |
     {{ kube_cmd }} get nodes {{ inventory_hostname | lower }} -o wide
   register: node_status
   changed_when: false
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   become: true
   when: node_exists.rc == 0
 
@@ -205,7 +294,7 @@
   until: control_plane_nodes.rc == 0
   retries: 30
   delay: 10
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
 
 - name: Wait for etcd health after node removal
   when: inventory_hostname in groups['control_plane_nodes']
@@ -215,5 +304,164 @@
   until: etcd_health.rc == 0
   retries: 30
   delay: 10
-  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  delegate_to: "{{ delegation_target }}"
   changed_when: false
+
+- name: Wait for critical kube-system pods on node
+  ansible.builtin.shell: |
+    set -o pipefail
+    
+    # Get all pods on the specific node
+    node_pods=$({{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o wide)
+    
+    # Expected pod name patterns based on node type
+    if [[ "{{ inventory_hostname in groups['control_plane_nodes'] }}" == "True" ]]; then
+      # Control plane node pods
+      expected_pods=(
+        "etcd-{{ inventory_hostname | lower }}"
+        "kube-apiserver-{{ inventory_hostname | lower }}"
+        "kube-controller-manager-{{ inventory_hostname | lower }}"
+        "kube-scheduler-{{ inventory_hostname | lower }}"
+        "cloud-controller-manager-{{ inventory_hostname | lower }}"
+        "kube-proxy-{{ inventory_hostname | lower }}"
+        "rke2-canal-"
+      )
+    else
+      # Worker node pods
+      expected_pods=(
+        "kube-proxy-{{ inventory_hostname | lower }}"
+        "rke2-canal-"
+        "rke2-ingress-nginx-controller-"
+      )
+    fi
+    
+    echo "Checking pods on node {{ inventory_hostname | lower }}"
+    echo "Current node pods:"
+    echo "$node_pods"
+    
+    all_pods_ready=true
+    missing_pods=()
+    
+    for pod_pattern in "${expected_pods[@]}"; do
+      matching_pods=$(echo "$node_pods" | grep "$pod_pattern" || true)
+      
+      if [ -z "$matching_pods" ]; then
+        echo "No pod found matching pattern: $pod_pattern"
+        missing_pods+=("$pod_pattern")
+        all_pods_ready=false
+        continue
+      fi
+      
+      while read -r pod_line; do
+        if [ -n "$pod_line" ]; then
+          ready_status=$(echo "$pod_line" | awk '{print $2}')
+          status=$(echo "$pod_line" | awk '{print $3}')
+          
+          if [[ "$ready_status" != "1/1" && "$ready_status" != "2/2" ]] || [[ "$status" != "Running" ]]; then
+            echo "Pod not ready: $pod_line"
+            all_pods_ready=false
+            break
+          fi
+        fi
+      done <<< "$matching_pods"
+    done
+    
+    if [ "$all_pods_ready" = false ]; then
+      echo "Not all expected pods are ready"
+      echo "Missing or not ready pods: ${missing_pods[*]}"
+      exit 1
+    fi
+    
+    echo "All expected pods are ready on node {{ inventory_hostname | lower }}"
+    exit 0
+  args:
+    executable: /bin/bash
+  register: critical_pods_check
+  until: critical_pods_check.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  delegate_to: "{{ delegation_target }}"
+  become: true
+
+- name: Display detailed pod status
+  debug:
+    msg: 
+      - "Pods on node {{ inventory_hostname }}:"
+      - "{{ critical_pods_check.stdout_lines }}"
+  when: critical_pods_check is defined
+
+- name: Additional verification for first control plane node
+  block:
+    - name: Wait longer for cluster components to stabilize
+      ansible.builtin.pause:
+        seconds: 120
+      when: rebuilding_first_node
+
+    - name: Check for pods not in Running state
+      ansible.builtin.shell: |
+        {{ kube_cmd }} get pods -n kube-system --no-headers | grep -v Running || true
+      register: non_running_pods
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
+
+    - name: Display non-running pods
+      ansible.builtin.debug:
+        msg: |
+          Pods not in Running state:
+          {{ non_running_pods.stdout_lines | default([]) }}
+
+    - name: Force delete stuck terminating pods
+      ansible.builtin.shell: |
+        for pod in $({{ kube_cmd }} get pods -n kube-system --no-headers | grep Terminating | awk '{print $1}'); do
+          echo "Force deleting pod: $pod"
+          {{ kube_cmd }} delete pod -n kube-system $pod --force --grace-period=0
+        done
+      delegate_to: "{{ delegation_target }}"
+      when: "'Terminating' in (non_running_pods.stdout | default(''))"
+      changed_when: true
+
+    - name: Final cluster component verification
+      ansible.builtin.shell: |
+        # Check all pods are Running
+        non_running=$({{ kube_cmd }} get pods -n kube-system --no-headers | grep -v Running || true)
+        if [ -n "$non_running" ]; then
+          echo "Found pods not in Running state:"
+          echo "$non_running"
+          exit 1
+        fi
+
+        # Check kube-proxy status
+        proxy_issues=$({{ kube_cmd }} get pods -n kube-system -l k8s-app=kube-proxy --no-headers | grep -v Running || true)
+        if [ -n "$proxy_issues" ]; then
+          echo "Found kube-proxy issues:"
+          echo "$proxy_issues"
+          exit 1
+        fi
+
+        # Check CoreDNS status
+        coredns_issues=$({{ kube_cmd }} get pods -n kube-system -l k8s-app=rke2-coredns --no-headers | grep -v Running || true)
+        if [ -n "$coredns_issues" ]; then
+          echo "Found CoreDNS issues:"
+          echo "$coredns_issues"
+          exit 1
+        fi
+
+        echo "All critical components are running"
+        exit 0
+      register: final_verify
+      until: final_verify.rc == 0
+      retries: 30
+      delay: 10
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
+
+    - name: Display final cluster status
+      ansible.builtin.debug:
+        msg: |
+          Final cluster status:
+          {{ final_verify.stdout_lines | join('\n') }}
+
+  when: rebuilding_first_node
+
+
