@@ -1,0 +1,121 @@
+---
+- name: RKE2 Cluster Cleanup Playbook
+  hosts: six_node_cluster
+  become: true
+  gather_facts: true
+  strategy: linear
+
+  tasks:
+    - name: System cleanup tasks
+      block:
+        - name: Remove snap packages in order
+          ansible.builtin.command: snap remove {{ item }}
+          loop:
+            - lxd
+            - core20
+            - snapd
+          register: snap_remove
+          changed_when: snap_remove.rc == 0
+          failed_when: false
+          ignore_errors: true
+
+        - name: Purge snapd and related packages
+          ansible.builtin.shell: |
+            dpkg --purge snapd gnome-software-plugin-snap snap-confine ubuntu-core-launcher
+          register: snapd_purge
+          failed_when: false
+          changed_when: snapd_purge.rc == 0
+
+        - name: Hold snapd package and related packages
+          ansible.builtin.dpkg_selections:
+            name: "{{ item }}"
+            selection: hold
+          loop:
+            - snapd
+            - gnome-software-plugin-snap
+            - snap-confine
+
+        - name: Purge unattended-upgrades and related packages
+          ansible.builtin.shell: |
+            dpkg --purge unattended-upgrades update-notifier-common \
+            ubuntu-release-upgrader-core update-manager-core python3-apt-dbg \
+            update-notifier ubuntu-advantage-tools
+          register: unattended_purge
+          failed_when: false
+          changed_when: unattended_purge.rc == 0
+
+        - name: Remove auto-upgrade configuration files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/apt/apt.conf.d/20auto-upgrades
+            - /etc/apt/apt.conf.d/50unattended-upgrades
+            - /etc/apt/apt.conf.d/10periodic
+            - /etc/apt/apt.conf.d/99update-notifier
+            - /var/log/unattended-upgrades
+          when: unattended_purge.changed
+
+        - name: Get current kernel version
+          ansible.builtin.command: uname -r
+          register: current_kernel
+          changed_when: false
+
+        - name: List installed kernel packages
+          ansible.builtin.shell: |
+            # Get the latest kernel version
+            latest_version=$(dpkg -l 'linux-headers-[0-9]*' | awk '/^ii/ {print $2}' | sort -V | tail -n1 | grep -o '[0-9].*')
+            
+            # List all kernel packages except the latest version and meta packages
+            dpkg -l 'linux-*' | \
+            awk '/^ii/ && ($2 ~ /^linux-(headers|image)-[0-9].*(-generic|-virtual)?$/) { print $2 }' | \
+            grep -v "$latest_version" | \
+            grep -v -E 'linux-(headers|image)-(generic|virtual)$' || true
+          register: old_kernel_packages
+          changed_when: false
+
+        - name: Purge old kernel packages
+          ansible.builtin.shell: |
+            if [ -n "{{ old_kernel_packages.stdout_lines | join(' ') }}" ]; then
+              for pkg in {{ old_kernel_packages.stdout_lines | join(' ') }}; do
+                dpkg --purge $pkg
+              done
+            fi
+          when: old_kernel_packages.stdout_lines | length > 0
+          register: kernel_purge
+
+        - name: Autoremove unused packages
+          ansible.builtin.apt:
+            autoremove: true
+            purge: true
+
+        - name: Remove snap related directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /snap
+            - /var/snap
+            - /var/lib/snapd
+            - /var/cache/snapd
+            - /usr/lib/snapd
+            - /etc/snapd
+            - /root/snap
+          when: snapd_purge.changed
+
+        - name: Clean package cache
+          ansible.builtin.apt:
+            clean: yes
+
+        - name: Display cleanup results
+          ansible.builtin.debug:
+            msg: 
+              - "Current kernel: {{ current_kernel.stdout }}"
+              - "Removed kernel packages:"
+              - "{{ old_kernel_packages.stdout_lines | default([]) }}"
+              - "Unattended upgrades purged: {{ unattended_purge.changed }}"
+              - "Snapd purged: {{ snapd_purge.changed }}"
+          when: kernel_purge.changed or unattended_purge.changed or snapd_purge.changed
+
+      become: true
+      when: ansible_os_family == "Debian"

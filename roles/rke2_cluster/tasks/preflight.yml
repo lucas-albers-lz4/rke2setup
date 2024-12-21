@@ -37,3 +37,26 @@
     that: 
       - (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available / 1024 / 1024 / 1024 >= 1
     fail_msg: "At least 1GB of free disk space is required"
+
+- name: Ensure UFW is disabled
+  become: true
+  block:
+    - name: Stop UFW service
+      ansible.builtin.systemd:
+        name: ufw
+        state: stopped
+        enabled: false
+      register: ufw_stop
+      failed_when: false
+
+    - name: Disable UFW
+      ansible.builtin.command: ufw disable
+      register: ufw_disable
+      changed_when: "'Firewall stopped and disabled on system startup' in ufw_disable.stdout"
+      failed_when: false
+
+    - name: Verify UFW is disabled
+      ansible.builtin.command: ufw status
+      register: ufw_status
+      failed_when: "'Status: active' in ufw_status.stdout"
+      changed_when: false

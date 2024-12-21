@@ -4,10 +4,10 @@ An Ansible role for deploying and managing RKE2 Kubernetes clusters with high av
 
 ## Overview
 
-- 🚀 Automated 6-node HA cluster deployment (3 control plane, 3 workers)
-- 🔒 Secure token and certificate management
-- 📊 Built-in health validation
-- ⚡ Production-like configuration
+-  Automated 6-node HA cluster deployment (3 control plane, 3 workers)
+-  Secure token and certificate management
+-  Built-in health validation
+-  Production-like configuration
 
 ## Features
 
@@ -29,24 +29,19 @@ The role includes comprehensive verification capabilities:
 
 Control Plane Nodes (each):
 - CPU: 2 vCPU minimum
-- RAM: 8GB minimum
-- Storage: 44GB minimum
-  - OS: 20GB
-  - Containers: 10GB
-  - etcd: 10GB
-  - System: 4GB
+- RAM: 4GB minimum
+- Storage: 12GB minimum
+
 
 Worker Nodes (each):
 - CPU: 2 vCPU minimum
-- RAM: 4GB minimum
-- Storage: 34GB minimum
-  - OS: 20GB
-  - Containers: 10GB
-  - System: 4GB
+- RAM: 2GB minimum
+- Storage: 7GB minimum
+
 
 ## Prerequisites
 
-- Ubuntu 22.04 or 24.04
+- Ubuntu 22.04 or 22.04, Debian 12
 - Ansible 8.7.0+
 - Python 3.x
 - SSH key-based authentication configured

@@ -1,0 +1,20 @@
+---
+- name: RKE2 Cluster Cleanup Playbook
+  hosts: six_node_cluster
+  become: true
+  gather_facts: true
+  strategy: linear
+
+  tasks:
+    - name: Update and upgrade all packages
+      apt:
+        update_cache: yes
+        upgrade: 'yes'
+        cache_valid_time: 3600
+        force_apt_get: yes
+      register: apt_update_status
+      retries: 3
+      delay: 10
+      until: apt_update_status is success
+      become: true
+      when: ansible_os_family == "Debian"
