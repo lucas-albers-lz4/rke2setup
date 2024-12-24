@@ -55,67 +55,20 @@ pip install -r requirements.txt
 ```
 
 2. Configure inventory:
+These are the ip addresses of the nodes you want to deploy.
+
 ```bash
 cp inventory/hosts.txt.example inventory/hosts.txt
 vi inventory/hosts.txt
 ```
 
-3. Deploy cluster:
-```bash
-make deploy
-```
-
-4. Verify deployment:
-```bash
-make verify-kubectl
-```
-
-## Verification Commands
-
-The role provides several verification targets:
+3. Generate the inventory file: rke2.yaml by running the following command:
 
 ```bash
-# Configure kubectl access
-make configure-kubectl
-
-# Full verification with kubectl setup
-make verify-kubectl
+make inventory
 ```
+Then push out your keys and update your ssh local keys so ansible can connect to the nodes.
 
-### Health Check Output
-
-The verification provides a structured health summary:
-```
-=== RKE2 Cluster Health Summary ===
-API Server: HEALTHY/UNHEALTHY
-Etcd: HEALTHY/UNHEALTHY
-
-=== Nodes ===
-[Node status details]
-
-=== Control Plane Pods ===
-[Control plane pod status]
-```
-
-## Architecture
-
-The role implements a fixed six-node architecture:
-- 3 Control plane nodes in HA configuration
-- 3 Worker nodes for workload distribution
-
-### Network Configuration
-- Default cluster network: 10.42.0.0/16
-- Service CIDR: 10.43.0.0/16
-
-## Available Make Targets
-
-```bash
-make deploy           # Deploy full cluster
-make verify-all      # Verify all prerequisites
-make setup-control   # Setup control plane nodes
-make verify-cluster  # Verify cluster health
-make setup-workers   # Setup worker nodes
-```
 
 ## Status
 [![Ansible Lint](https://github.com/lucas-albers-lz4/rke2setup/actions/workflows/ansible-lint.yml/badge.svg)](https://github.com/lucas-albers-lz4/rke2setup/actions/workflows/ansible-lint.yml)
