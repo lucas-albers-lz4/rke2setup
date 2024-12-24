@@ -335,14 +335,14 @@
         "kube-scheduler-{{ inventory_hostname | lower }}"
         "cloud-controller-manager-{{ inventory_hostname | lower }}"
         "kube-proxy-{{ inventory_hostname | lower }}"
-        "rke2-canal-"
+        "cilium-"
       )
     else
       # Worker node pods
       expected_pods=(
         "kube-proxy-{{ inventory_hostname | lower }}"
-        "rke2-canal-"
         "rke2-ingress-nginx-controller-"
+        "cilium-"
       )
     fi
     
