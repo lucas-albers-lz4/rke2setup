@@ -83,30 +83,20 @@
   ansible.builtin.command: systemctl enable rke2-server
   become: true
 
-- name: first start rke2-server
-  ansible.builtin.command: systemctl start rke2-server
-- name: Start rke2-server
+- name: Start RKE2 service
   ansible.builtin.systemd:
-    name: rke2-server
+    name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
     state: started
-    enabled: true
     daemon_reload: true
-  register: service_start
-  vars:
-    ansible_timeout: "300"
-    __systemd_start_timeout: "300"
-  environment:
-    SYSTEMD_TIMEOUT: "300"
+  become: true
+
+- name: Wait for RKE2 service to be fully started
+  ansible.builtin.wait_for:
+    timeout: 180
+  register: wait_result
   retries: 3
-  delay: 10
-  until: service_start is success
-- name: start rke2-server
-  ansible.builtin.command: systemctl start rke2-server
-  register: service_active
-  retries: 30
-  delay: 10
-  until: service_active.stdout == "active"
-  changed_when: false
+  delay: 30
+  until: wait_result is success
 
 - name: Wait for RKE2 binaries to be installed
   ansible.builtin.wait_for:
