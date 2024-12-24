@@ -1,7 +1,9 @@
 {% if rke2_config.write_kubeconfig_mode is defined %}
 write-kubeconfig-mode: "{{ rke2_config.write_kubeconfig_mode }}"
 {% endif %}
-
+debug : true
+cni: cilium
+disable-network-policy: true
 # Cluster member identification
 node-name: {{ inventory_hostname }}
 
@@ -41,8 +43,9 @@ node-label:
   - "node.kubernetes.io/instance-type=control-plane"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=control-plane"
-node-taint:
-  - "CriticalAddonsOnly=true:NoSchedule"
+#removed this because it was causing the nodes to not start
+#node-taint:
+#  - "CriticalAddonsOnly=true:NoSchedule"
 {% else %}
   - "node.kubernetes.io/instance-type=worker"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
