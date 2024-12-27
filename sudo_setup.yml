@@ -1,0 +1,55 @@
+---
+- name: Ensure sudo is configured
+  hosts: all
+  gather_facts: false
+  
+  tasks:
+    - name: Check for existing sudo configurations
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: sudo_configs
+      with_items:
+        - "/etc/sudoers.d/90-cloud-init-users"
+        - "/etc/sudoers.d/90-{{ ansible_user }}"
+      become: true
+      ignore_errors: true
+
+    - name: Display privilege escalation help
+      ansible.builtin.fail:
+        msg: |
+          Privilege escalation failed. Please rerun the playbook with SSH and sudo passwords:
+          ansible-playbook -i inventory/rke2.yml sudo_setup.yml -e "airgap_install=true" --limit {{ inventory_hostname }} -k -K
+          
+          -k : SSH password
+          -K : SUDO password
+      when: sudo_configs.failed | default(false)
+
+    - name: Set fact for sudo configuration status
+      ansible.builtin.set_fact:
+        needs_sudo_config: "{{ not (sudo_configs.results | map(attribute='stat.exists') | select('true') | list | length > 0) }}"
+      when: not sudo_configs.failed | default(false)
+
+    - name: Ensure sudoers.d directory exists
+      ansible.builtin.file:
+        path: /etc/sudoers.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      become: true
+      when: 
+        - not sudo_configs.failed | default(false)
+        - needs_sudo_config | default(false)
+
+    - name: Configure passwordless sudo for user
+      ansible.builtin.copy:
+        content: "{{ ansible_user }} ALL=(ALL) NOPASSWD:ALL"
+        dest: "/etc/sudoers.d/90-{{ ansible_user }}"
+        mode: '0440'
+        owner: root
+        group: root
+        validate: 'visudo -cf %s'
+      become: true
+      when: 
+        - not sudo_configs.failed | default(false)
+        - needs_sudo_config | default(false) 
