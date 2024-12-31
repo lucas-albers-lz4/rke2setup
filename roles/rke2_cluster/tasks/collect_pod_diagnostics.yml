@@ -1,0 +1,27 @@
+---
+- name: Collect pod diagnostics
+  ansible.builtin.shell: |
+    echo "=== Recent Pod Status for {{ inventory_hostname }} ==="
+    {{ paths.rke2.bin }}/kubectl get pods -n kube-system \
+      --field-selector spec.nodeName={{ inventory_hostname | lower }} -o wide | tail -n 5
+    
+    echo -e "\n=== Latest Events for Non-Running Pods ==="
+    for pod in $({{ paths.rke2.bin }}/kubectl get pods -n kube-system --no-headers \
+      --field-selector spec.nodeName={{ inventory_hostname | lower }} | grep -v Running | cut -d' ' -f1); do
+      echo -e "\nLast 5 events for $pod:"
+      {{ paths.rke2.bin }}/kubectl describe pod -n kube-system "$pod" | grep -A 5 "^Events:"
+    done
+  environment:
+    KUBECONFIG: "{{ verification_params.kubeconfig }}"
+  register: pod_diagnostics
+  delegate_to: "{{ verification_params.delegation_target }}"
+
+- name: Display diagnostics
+  ansible.builtin.debug:
+    msg: "{{ pod_diagnostics.stdout_lines }}"
+
+- name: Pod verification failed
+  ansible.builtin.fail:
+    msg: |
+      Pod verification failed for {{ inventory_hostname }} ({{ 'control plane' if inventory_hostname in groups['control_plane_nodes'] else 'worker' }} node).
+      Check diagnostic output above. 
