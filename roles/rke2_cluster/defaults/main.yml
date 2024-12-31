@@ -1,6 +1,6 @@
 ---
 # RKE2 Cluster Default Variables
-
+rke2_version: "v1.31.4+rke2r1"  # Update this to match your desired version
 # Cluster Configuration
 cluster_type: "six_node"
 first_server_ip: ""
@@ -161,5 +161,5 @@ timeout_connection: 30
 timeout_api_check: 180
 
 # Airgap installation
-airgap_install: false
-rke2_version: "v1.31.4+rke2r1"  # Update this to match your desired version
+airgap_install: true 
+
