@@ -1,0 +1,69 @@
+---
+- name: Set version directory path
+  ansible.builtin.set_fact:
+    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version.stdout }}"
+
+- name: Create local download directories
+  ansible.builtin.file:
+    path: "{{ version_dir }}"
+    state: directory
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Check if images are already downloaded
+  ansible.builtin.stat:
+    path: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: image_check
+  loop: "{{ airgap.architectures }}"
+  delegate_to: localhost
+  become: false
+
+- name: Test integrity of existing zst files
+  ansible.builtin.command:
+    cmd: zstd -t "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+  loop: "{{ airgap.architectures }}"
+  register: integrity_check
+  failed_when: false
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  when: image_check.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first
+
+- name: Debug check results
+  debug:
+    msg: 
+      - "File exists: {{ image_check.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first }}"
+      - "Integrity RC: {{ integrity_check.results | selectattr('item', 'equalto', item) | map(attribute='rc') | first }}"
+  loop: "{{ airgap.architectures }}"
+  when: image_check.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first
+
+- name: Get remote file timestamp
+  ansible.builtin.uri:
+    url: "{{ airgap.urls.base | replace('+', '%2B') }}/rke2-images.linux-{{ item }}.tar.zst"
+    method: HEAD
+    status_code: [200, 403]
+  register: remote_file_info
+  loop: "{{ airgap.architectures }}"
+  delegate_to: localhost
+  become: false
+  when: >
+    not (image_check.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first) or
+    (integrity_check.results | selectattr('item', 'equalto', item) | map(attribute='rc') | first != 0)
+
+- name: Download RKE2 images for different architectures
+  get_url:
+    url: "{{ airgap.urls.base | replace('+', '%2B') }}/rke2-images.linux-{{ item }}.tar.zst"
+    dest: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+    timeout: 300
+    force: true
+  loop: "{{ airgap.architectures }}"
+  delegate_to: localhost
+  become: false
+  when: >
+    not (image_check.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first) or
+    (integrity_check.results | selectattr('item', 'equalto', item) | map(attribute='rc') | first != 0)
+

@@ -1,0 +1,53 @@
+---
+- name: Include airgap variables
+  ansible.builtin.include_vars:
+    file: airgap.yml
+
+- name: Set version directory path
+  ansible.builtin.set_fact:
+    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version.stdout }}"
+
+- name: Verify local download structure
+  block:
+    - name: Check download directory exists
+      ansible.builtin.stat:
+        path: "{{ version_dir }}"
+      register: download_dir
+      delegate_to: localhost
+      become: false
+
+    - name: Verify image files exist
+      ansible.builtin.stat:
+        path: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+      register: image_files
+      loop: "{{ airgap.architectures }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Verify image file checksums
+      ansible.builtin.shell: |
+        if [ -f "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst" ]; then
+          sha256sum "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+        else
+          echo "File not found"
+          exit 1
+        fi
+      register: checksums
+      loop: "{{ airgap.architectures }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+
+    - name: Display verification results
+      ansible.builtin.debug:
+        msg: |
+          Download directory exists: {{ download_dir.stat.exists }}
+          Image existence status:
+          {% for result in image_files.results %}
+          {{ result.item }}: {{ result.stat.exists }}
+          {% endfor %}
+          Image checksums:
+          {% for result in checksums.results %}
+          {{ result.item }}: {{ result.stdout if result.rc == 0 else 'Not found' }}
+          {% endfor %} 
