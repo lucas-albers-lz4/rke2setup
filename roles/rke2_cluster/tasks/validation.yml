@@ -9,8 +9,7 @@
       register: node_status
       changed_when: false
 
-    - name: Check pod status across all namespaces
-      ansible.builtin.command:
-        cmd: "{{ commands.kubectl }} get pods -A"
-      register: pod_status
-      changed_when: false
+    - name: Verify pod status
+      ansible.builtin.include_tasks: verify_pods.yml
+      vars:
+        rebuilding_first_node: false

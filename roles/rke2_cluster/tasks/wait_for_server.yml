@@ -53,25 +53,17 @@
         - { host: "{{ groups['control_plane_nodes'][0] }}", port: 6443 }
       register: port_check
 
-    - name: Verify API health using kubectl
-      ansible.builtin.shell: |
-        for i in $(seq 1 12); do
-          if {{ paths.rke2.bin }}/kubectl get --raw=/healthz 2>/dev/null | grep -q 'ok'; then
-            echo "API is healthy"
-            exit 0
-          fi
-          echo "Attempt $i: API not ready yet, waiting..."
-          sleep 10
-        done
-        echo "API health check failed after 12 attempts"
-        exit 1
+    - name: Verify API health using kubectl version
+      ansible.builtin.command:
+        cmd: "{{ paths.rke2.bin }}/kubectl version"
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
       register: healthz_check
+      retries: 20
+      delay: 10
       until: healthz_check.rc == 0
-      retries: "{{ retry_standard }}"
-      delay: "{{ retry_delay }}"
       changed_when: false
+      become: true
   rescue:
     - name: Run diagnostics on failure
       ansible.builtin.include_tasks: diagnostics.yml
