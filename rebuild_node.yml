@@ -1,12 +1,15 @@
 ---
 - name: Rebuild RKE2 Node
-  hosts: all
-  serial: 1
-  gather_facts: true
+  hosts: "{{ target_host | default('all') }}"
   become: true
-  
+  gather_facts: true
+
+  vars_files:
+    - roles/rke2_cluster/vars/main.yml
+    - roles/rke2_cluster/vars/kubectl.yml
+
   tasks:
     - name: Include node rebuild tasks
       ansible.builtin.include_role:
         name: rke2_cluster
-        tasks_from: rebuild_node
+        tasks_from: rebuild_node.yml
