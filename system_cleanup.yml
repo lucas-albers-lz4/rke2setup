@@ -8,6 +8,24 @@
   tasks:
     - name: System cleanup tasks
       block:
+        - name: Stop and disable unnecessary services
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: stopped
+            enabled: false
+            masked: true
+          loop:
+            - wpa_supplicant
+            - polkit
+            - ModemManager
+          failed_when: false
+
+        - name: Stop unattended-upgrades service
+          ansible.builtin.systemd:
+            name: unattended-upgrades.service
+            state: stopped
+          failed_when: false
+
         - name: Remove snap packages in order
           ansible.builtin.command: snap remove {{ item }}
           loop:
@@ -63,26 +81,40 @@
 
         - name: List installed kernel packages
           ansible.builtin.shell: |
-            # Get the latest kernel version
-            latest_version=$(dpkg -l 'linux-headers-[0-9]*' | awk '/^ii/ {print $2}' | sort -V | tail -n1 | grep -o '[0-9].*')
+            # Get the current running kernel version with full version
+            CURRENT_VERSION=$(uname -r)
+            # Extract major.minor.build
+            CURRENT_BASE_VERSION=$(echo $CURRENT_VERSION | cut -d'+' -f1)
             
-            # List all kernel packages except the latest version and meta packages
+            # Handle both x86_64 and ARM64 kernel package patterns
+            if [ "{{ ansible_architecture }}" = "aarch64" ]; then
+              KERNEL_PATTERN="linux-(headers|image|modules|modules-extra)-[0-9].*(-generic|-virtual|-aws|-azure|-gcp|-oracle|-raspi)?$"
+            else
+              KERNEL_PATTERN="linux-(headers|image|modules|modules-extra)-[0-9].*(-generic|-virtual)?$"
+            fi
+            
+            # List all kernel packages except those matching the current version
             dpkg -l 'linux-*' | \
-            awk '/^ii/ && ($2 ~ /^linux-(headers|image)-[0-9].*(-generic|-virtual)?$/) { print $2 }' | \
-            grep -v "$latest_version" | \
-            grep -v -E 'linux-(headers|image)-(generic|virtual)$' || true
+            awk -v pattern="$KERNEL_PATTERN" '/^[pi]i/ && ($2 ~ pattern) { print $2 }' | \
+            grep -v "$CURRENT_BASE_VERSION" | \
+            grep -v -E 'linux-(headers|image|modules|modules-extra)-(generic|virtual|raspi)$' || true
           register: old_kernel_packages
           changed_when: false
 
         - name: Purge old kernel packages
           ansible.builtin.shell: |
             if [ -n "{{ old_kernel_packages.stdout_lines | join(' ') }}" ]; then
-              for pkg in {{ old_kernel_packages.stdout_lines | join(' ') }}; do
-                dpkg --purge $pkg
+              # Remove packages in a specific order to handle dependencies
+              for type in image modules-extra modules headers; do
+                pkgs=$(echo "{{ old_kernel_packages.stdout_lines | join(' ') }}" | tr ' ' '\n' | grep "linux-$type" || true)
+                if [ -n "$pkgs" ]; then
+                  dpkg --purge $pkgs
+                fi
               done
             fi
           when: old_kernel_packages.stdout_lines | length > 0
           register: kernel_purge
+          failed_when: false  # Add this to prevent task failure due to non-empty directories
 
         - name: Autoremove unused packages
           ansible.builtin.apt:
