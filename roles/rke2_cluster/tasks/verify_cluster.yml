@@ -1,63 +1,74 @@
 ---
-- name: Verify cluster health
+- name: Collect cluster health information
   block:
-    - name: Wait for all control plane nodes
-      command:
-        cmd: "{{ paths.rke2.bin }}/kubectl get nodes --selector='node-role.kubernetes.io/control-plane' -o jsonpath='{range .items[*]}{.metadata.name}{\"\\t\"}{.status.conditions[?(@.type==\"Ready\")].status}{\"\\n\"}{end}'"
+    - name: Check node status
+      ansible.builtin.command:
+        cmd: kubectl get nodes -o wide
       environment:
         KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-      register: control_plane_status
-      until: control_plane_status.rc == 0
-      retries: 30
-      delay: 10
-      delegate_to: "{{ hostvars[groups['control_plane_nodes'][0]]['inventory_hostname'] }}"
-      run_once: true
-      when:
-        - inventory_hostname != groups['control_plane_nodes'][0]
-        - groups['control_plane_nodes'] | length > 1
-
-    - name: Check overall cluster health
-      command:
-        cmd: "{{ paths.rke2.bin }}/kubectl get --raw=/healthz"
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
-      register: cluster_health
-      until: cluster_health.rc == 0
-      retries: 30
-      delay: 10
-      delegate_to: "{{ hostvars[groups['control_plane_nodes'][0]]['inventory_hostname'] }}"
-      run_once: true
-      when:
-        - inventory_hostname != groups['control_plane_nodes'][0]
-        - groups['control_plane_nodes'] | length > 1
-
-    - name: Verify remaining nodes are Ready
-      ansible.builtin.shell: |
-        expected_cp_count="{{ groups['control_plane_nodes'] | length }}"
-        current_cp_count="$({{ kube_cmd }} get nodes --selector=node-role.kubernetes.io/control-plane --no-headers | wc -l)"
-
-        if [ "${current_cp_count}" -eq 1 ] && [ "${expected_cp_count}" -gt 1 ]; then
-          first_node_status="$({{ kube_cmd }} get nodes {{ groups['control_plane_nodes'][0] }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')"
-          if [ "${first_node_status}" = "True" ]; then
-            echo "First control plane node is ready, proceeding with second node setup"
-            exit 0
-          fi
-          exit 1
-        fi
-
-        {{ kube_cmd }} get nodes --selector=node-role.kubernetes.io/control-plane --no-headers | grep -v {{ inventory_hostname }} | grep Ready
-      register: remaining_nodes
-      until: remaining_nodes.rc == 0
-      retries: 30
-      delay: 10
-      delegate_to: "{{ delegation_target }}"
+      register: node_status
       changed_when: false
+      become: true
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
 
-    - name: Display node verification status
+    - name: Check control plane pods
+      ansible.builtin.command:
+        cmd: kubectl get pods -n kube-system -l tier=control-plane -o wide
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: pod_status
+      changed_when: false
+      become: true
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+
+    - name: Check etcd health
+      ansible.builtin.command:
+        cmd: kubectl get --raw /healthz/etcd
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: etcd_health
+      changed_when: false
+      become: true
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+
+    - name: Check API server health
+      ansible.builtin.command:
+        cmd: kubectl get --raw /healthz
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: apiserver_health
+      changed_when: false
+      become: true
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+
+    - name: Verify required pods are running
+      ansible.builtin.shell:
+        cmd: |
+          KUBECONFIG={{ paths.rke2.kubeconfig }} {{ paths.rke2.bin }}/kubectl get pods -n kube-system | grep -q "{{ item }}"
+      register: pod_check
+      until: pod_check.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+      failed_when: false
+      become: true
+      delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+      with_items:
+        - "kube-apiserver"
+        - "kube-controller-manager"
+        - "kube-scheduler"
+        - "etcd"
+      when: inventory_hostname in groups['control_plane_nodes']
+
+    - name: Display cluster health summary
       ansible.builtin.debug:
-        msg: |
-          Current node: {{ inventory_hostname }}
-          Expected control plane count: {{ groups['control_plane_nodes'] | length }}
-          Found control plane nodes:
-          {{ remaining_nodes.stdout_lines | default([]) }}
-      when: remaining_nodes is defined
+        msg:
+          - "=== RKE2 Cluster Health Summary ==="
+          - "API Server: {{ 'HEALTHY' if 'ok' in apiserver_health.stdout else 'UNHEALTHY' }}"
+          - "Etcd: {{ 'HEALTHY' if 'ok' in etcd_health.stdout else 'UNHEALTHY' }}"
+          - ""
+          - "=== Nodes ==="
+          - "{{ node_status.stdout_lines }}"
+          - ""
+          - "=== Control Plane Pods ==="
+          - "{{ pod_status.stdout_lines }}"
