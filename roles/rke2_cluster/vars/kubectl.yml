@@ -1,0 +1,11 @@
+---
+kubectl:
+  binary:
+    name: kubectl
+    source: /var/lib/rancher/rke2/bin/kubectl
+    symlink: /usr/local/bin/kubectl
+  config:
+    source: /etc/rancher/rke2/rke2.yaml
+    user: "/home/{{ ansible_user }}/.kube/config"
+    root: /root/.kube/config
+  command: "/usr/local/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml"
