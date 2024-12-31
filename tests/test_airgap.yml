@@ -1,0 +1,37 @@
+---
+- name: Test airgap image downloads
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - "../roles/rke2_cluster/vars/airgap.yml"
+    - "../roles/rke2_cluster/defaults/main.yml"
+
+  tasks:
+
+    - name: Include airgap tasks
+      ansible.builtin.include_tasks: ../roles/rke2_cluster/tasks/airgap_images.yml
+      tags: [download]
+
+    - name: Test idempotency
+      block:
+        - name: Get initial timestamps
+          ansible.builtin.stat:
+            path: "{{ airgap.paths.version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+          register: initial_stats
+          loop: "{{ airgap.architectures }}"
+
+        - name: Get final timestamps
+          ansible.builtin.stat:
+            path: "{{ airgap.paths.version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+          register: final_stats
+          loop: "{{ airgap.architectures }}"
+
+        - name: Verify timestamps haven't changed
+          ansible.builtin.assert:
+            that: 
+              - initial_stats.results[idx].stat.mtime == final_stats.results[idx].stat.mtime
+            fail_msg: "File for {{ item }} was unnecessarily downloaded again"
+          loop: "{{ airgap.architectures }}"
+          loop_control:
+            index_var: idx
+      tags: [idempotency] 
