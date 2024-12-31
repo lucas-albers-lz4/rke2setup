@@ -1,0 +1,24 @@
+---
+airgap:
+  architectures:
+    - amd64
+    - arm64
+  paths:
+    downloads: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images"
+    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version }}"
+    images_dir: "/var/lib/rancher/rke2/agent/images"
+  urls:
+    base: "https://github.com/rancher/rke2/releases/download/{{ rke2_version }}"
+  file_modes:
+    downloads: "0644"
+    directories: "0755"
+
+# Define image_url template separately to avoid recursive templating
+image_url_template: "{{ airgap.urls.base }}/rke2-images.linux-{{ item }}.tar.zst"
+
+# Base download directory
+rke2_download_base: "~/Downloads/rke2-images"
+
+# Construct full download path
+download_path: "{{ rke2_download_base | expanduser }}"
+
