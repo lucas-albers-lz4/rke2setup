@@ -1,0 +1,97 @@
+---
+- name: Set verification parameters
+  ansible.builtin.set_fact:
+    verification_params:
+      retries: "{{ retry_extended if rebuilding_first_node | default(false) else retry_standard }}"
+      delay: "{{ retry_delay }}"
+      kubeconfig: "{{ paths.rke2.kubeconfig }}"
+      # Delegate to first control plane node unless we're verifying that node
+      delegation_target: >-
+        {{
+          groups['control_plane_nodes'][1] if 
+          (inventory_hostname == groups['control_plane_nodes'][0] and groups['control_plane_nodes'] | length > 1)
+          else groups['control_plane_nodes'][0]
+        }}
+
+- name: Set pod requirements based on node type and CNI
+  ansible.builtin.set_fact:
+    required_pods: >-
+      {{
+        control_plane_pods if inventory_hostname in groups['control_plane_nodes']
+        else worker_pods
+      }}
+    control_plane_pods: >-
+      {{
+        ['coredns', 'metrics-server', 'rke2-ingress-nginx-controller', 'etcd',
+         'kube-apiserver', 'kube-controller-manager', 'kube-scheduler'] +
+        (['cilium'] if rke2_cni == 'cilium' else ['canal'])
+      }}
+    worker_pods: >-
+      {{
+        ['kube-proxy'] +
+        (['cilium'] if rke2_cni == 'cilium' else ['canal'])
+      }}
+
+- name: Display verification target
+  ansible.builtin.debug:
+    msg: |
+      Verifying pods on {{ inventory_hostname }} ({{ 'control plane' if inventory_hostname in groups['control_plane_nodes'] else 'worker' }} node)
+      Required pods: {{ required_pods | join(', ') }}
+      Delegating checks to: {{ verification_params.delegation_target }}
+  delegate_to: "{{ verification_params.delegation_target }}"
+
+- name: Verify system pods status
+  block:
+    - name: Wait for critical kube-system pods
+      ansible.builtin.shell: |
+        echo "Checking for non-running pods..."
+        non_running=$({{ paths.rke2.bin }}/kubectl get pods -n kube-system \
+          --field-selector spec.nodeName={{ inventory_hostname | lower }},status.phase!=Running \
+          --no-headers -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[0].ready)
+        if [ -n "$non_running" ]; then
+          echo "Found non-running pods:"
+          echo "$non_running"
+          exit 1
+        fi
+        exit 0
+      environment:
+        KUBECONFIG: "{{ verification_params.kubeconfig }}"
+      register: non_running_pods
+      until: non_running_pods.rc == 0
+      retries: "{{ verification_params.retries }}"
+      delay: "{{ verification_params.delay }}"
+      delegate_to: "{{ verification_params.delegation_target }}"
+      changed_when: false
+
+    - name: Verify required components for node type
+      ansible.builtin.shell: |
+        required_pods=({% for pod in required_pods %} "{{ pod }}" {% endfor %})
+        missing_pods=()
+
+        echo "Starting verification of required pods..."
+        for pod in "${required_pods[@]}"; do
+          echo "Checking for $pod..."
+          if ! {{ paths.rke2.bin }}/kubectl get pods -n kube-system --no-headers \
+              --field-selector spec.nodeName={{ inventory_hostname | lower }},status.phase=Running | grep -q "$pod"; then
+            missing_pods+=("$pod")
+            echo "MISSING: $pod"
+          else
+            echo "FOUND: $pod"
+          fi
+        done
+
+        if [ ${#missing_pods[@]} -ne 0 ]; then
+          echo "Waiting for pods: ${missing_pods[*]}"
+          exit 1
+        fi
+
+        echo "All required pods are running for node type: {{ 'control plane' if inventory_hostname in groups['control_plane_nodes'] else 'worker' }}"
+      register: pod_verification
+      until: pod_verification.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+  rescue:
+    - name: Include pod diagnostics collection
+      ansible.builtin.include_tasks: collect_pod_diagnostics.yml
