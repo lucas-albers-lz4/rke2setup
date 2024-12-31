@@ -83,6 +83,10 @@
   ansible.builtin.command: systemctl enable rke2-server
   become: true
 
+- name: Include image management tasks
+  ansible.builtin.include_tasks: manage_images.yml
+  when: airgap_install
+
 - name: Start RKE2 service
   ansible.builtin.systemd:
     name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
@@ -92,10 +96,10 @@
 
 - name: Wait for RKE2 service to be fully started
   ansible.builtin.wait_for:
-    timeout: 180
+    timeout: 181
   register: wait_result
-  retries: 3
-  delay: 30
+  retries: 12 
+  delay: 15
   until: wait_result is success
 
 - name: Wait for RKE2 binaries to be installed
@@ -206,29 +210,11 @@
 - name: Debug RKE2 status
   ansible.builtin.debug:
     msg: |
-      Service Status: {{ rke2_ready.service.stdout }}
-      Node Status: {{ rke2_ready.node.stdout }}
-      API Status: {{ rke2_ready.api.status }}
+      Service Status: {{ rke2_ready.service.status.ActiveState }}
+      API Status: {{ rke2_ready.api.stdout }}
+      Ports Status: {{ rke2_ready.ports.msg }}
   when: inventory_hostname == groups['control_plane_nodes'][0] and rke2_ready is defined
-
-- name: Start RKE2 server service
-  ansible.builtin.systemd:
-    name: rke2-server
-    state: started
-    enabled: true
-    daemon_reload: true
-  register: service_start
-  until: service_start is success
-  retries: "{{ retry_standard }}"
-  delay: "{{ retry_delay }}"
-
-- name: Wait for RKE2 to be ready
-  ansible.builtin.wait_for:
-    host: "{{ inventory_hostname }}"
-    port: 9345
-    timeout: "{{ timeout_startup }}"
-  register: server_ready
 
 - name: Verify first control plane is ready
   ansible.builtin.include_tasks: verify_first_control_plane.yml
-  when: server_ready is success
+  when: control_plane_ready | bool
