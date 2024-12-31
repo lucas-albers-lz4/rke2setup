@@ -1,26 +1,30 @@
 ---
-- name: Wait for kubeconfig
-  ansible.builtin.wait_for:
-    path: "{{ paths.base.rke2.kubeconfig }}"
-    state: present
-    timeout: 300
+- name: Check if kubeconfig exists locally
+  stat:
+    path: "{{ kubeconfig_dest }}"
+  delegate_to: localhost
   register: kubeconfig_file
+  when: kubeconfig_dest is defined
 
-- name: Configure cluster access
-  when: kubeconfig_file.stat.exists
+- name: Wait for kubeconfig
+  wait_for:
+    path: /etc/rancher/rke2/rke2.yaml
+    state: present
+    timeout: 600
+
+- name: Copy kubeconfig
   block:
-    - name: Copy kubeconfig
-      ansible.builtin.copy:
-        src: "{{ paths.base.rke2.kubeconfig }}"
-        dest: "{{ paths.user.config }}"
-        remote_src: true
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: "{{ file_modes.file.secure }}"
-
-    - name: Update server address
-      ansible.builtin.replace:
-        path: "{{ paths.user.config }}"
-        regexp: "server: https://127.0.0.1:6443"
-        replace: "server: https://{{ first_server_ip }}:6443"
-      when: inventory_hostname != groups['control_plane_nodes'][0]
+    - name: Ensure kubeconfig directory exists
+      file:
+        path: "{{ kubeconfig_dest | dirname }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      when: kubeconfig_dest is defined
+      
+    - name: Copy kubeconfig file
+      fetch:
+        src: /etc/rancher/rke2/rke2.yaml
+        dest: "{{ kubeconfig_dest }}"
+        flat: yes
+      when: kubeconfig_dest is defined and (not kubeconfig_file.stat.exists or force_kubeconfig_copy | default(false) | bool)
