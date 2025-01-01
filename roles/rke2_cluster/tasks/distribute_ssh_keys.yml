@@ -6,6 +6,50 @@
   delegate_to: localhost
   run_once: true
 
+- name: Test SSH key authentication
+  ansible.builtin.command: >-
+    ssh -o BatchMode=yes 
+    -o ConnectTimeout=5 
+    -o StrictHostKeyChecking=no 
+    -o PreferredAuthentications=publickey 
+    {{ ansible_user }}@{{ ansible_host }} 
+    echo success
+  register: key_auth
+  delegate_to: localhost
+  ignore_errors: true
+  changed_when: false
+
+- name: Check if password authentication is allowed
+  ansible.builtin.command: >-
+    sshpass -p "{{ ansible_password }}"
+    ssh -o StrictHostKeyChecking=no 
+    -o PreferredAuthentications=password 
+    -o PubkeyAuthentication=no 
+    -o PasswordAuthentication=yes 
+    {{ ansible_user }}@{{ ansible_host }} 
+    echo success
+  register: password_auth
+  delegate_to: localhost
+  ignore_errors: true
+  changed_when: false
+  when: key_auth.rc != 0
+  no_log: true  # Hide password from logs
+
+- name: Fail with helpful message
+  ansible.builtin.fail:
+    msg: |
+      Unable to authenticate with {{ ansible_host }}:
+      - Public key authentication failed
+      - Password authentication is not enabled on the remote host
+
+      To fix this, either:
+      1. Enable password authentication by setting 'PasswordAuthentication yes' in /etc/ssh/sshd_config on the remote host
+      2. Or copy your SSH key manually using 'ssh-copy-id {{ ansible_user }}@{{ ansible_host }}'
+  when: 
+    - key_auth.rc != 0
+    - password_auth.rc is defined
+    - password_auth.rc != 0
+
 - name: Ensure .ssh directory exists on all nodes
   ansible.builtin.file:
     path: "~/.ssh"
