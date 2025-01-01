@@ -1,6 +1,6 @@
 ---
 # RKE2 Cluster Default Variables
-rke2_version: "v1.31.4+rke2r1"  # Update this to match your desired version
+#rke2_version: "v1.31.4+rke2r1"  # Update this to match your desired version
 # Cluster Configuration
 cluster_type: "six_node"
 first_server_ip: ""
