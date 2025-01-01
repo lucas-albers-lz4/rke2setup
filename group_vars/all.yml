@@ -1,5 +1,5 @@
 # Define the standardized kubectl command with proper paths
-kube_cmd: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml 
+kube_cmd: "{{ kubectl.command }}"
 
 # ETCD command configuration
 etcdctl_params: >-

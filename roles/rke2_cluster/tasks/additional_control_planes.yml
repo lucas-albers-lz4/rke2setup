@@ -1,7 +1,7 @@
 ---
 - name: Create RKE2 config directory for additional control planes
   ansible.builtin.file:
-    path: /etc/rancher/rke2
+    path: "{{ paths.rke2.config }}"
     state: directory
     mode: "0755"
     owner: root
@@ -11,7 +11,7 @@
 - name: Configure additional control plane nodes
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: /etc/rancher/rke2/config.yaml
+    dest: "{{ paths.rke2.config }}/config.yaml"
     mode: "0644"
     owner: root
     group: root
@@ -51,9 +51,9 @@
         mode: "0755"
       become: true
       loop:
-        - /var/lib/rancher/rke2/bin
-        - /usr/local/bin
-        - /etc/rancher/rke2
+        - "{{ paths.rke2.bin }}"
+        - "{{ paths.system.bin }}"
+        - "{{ paths.rke2.config }}"
 
     - name: Wait for critical files
       ansible.builtin.wait_for:
@@ -61,8 +61,8 @@
         state: present
         timeout: 60
       loop:
-        - /var/lib/rancher/rke2/bin/kubectl
-        - /usr/local/bin/rke2
+        - "{{ kubectl.binary.source }}"
+        - "{{ paths.system.bin }}/rke2"
       register: file_wait
   rescue:
     - name: Collect debug information
@@ -114,10 +114,8 @@
 
     - name: Wait for local node readiness
       ansible.builtin.shell: |
-        {{ paths.rke2.bin }}/kubectl get nodes {{ inventory_hostname | lower }} \
+        {{ kubectl.command }} get nodes {{ inventory_hostname | lower }} \
           -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-      environment:
-        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
       register: node_ready
       until: node_ready.stdout == "True"
       retries: "{{ retry_extended }}"

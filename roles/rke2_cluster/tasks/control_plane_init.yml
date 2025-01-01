@@ -72,14 +72,14 @@
 
 - name: Wait for RKE2 server to be ready
   ansible.builtin.wait_for:
-    path: "{{ paths.rke2.bin }}/kubectl"
+    path: "{{ kubectl.binary.source }}"
     state: present
     timeout: "{{ timeout_startup }}"
 
 - name: Create kubectl symlink
   ansible.builtin.file:
-    src: "{{ paths.rke2.bin }}/kubectl"
-    dest: "{{ paths.system.bin }}/kubectl"
+    src: "{{ kubectl.binary.source }}"
+    dest: "{{ kubectl.binary.symlink }}"
     state: link
     force: true
     owner: "root"

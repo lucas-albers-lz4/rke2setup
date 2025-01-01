@@ -13,25 +13,25 @@
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
       loop:
-        - "{{ paths.user.kube_dir }}"
-        - /root/.kube
+        - "{{ kubectl.config.user | dirname }}"
+        - "{{ kubectl.config.root | dirname }}"
 
     - name: Create symlinks for kubectl config
       ansible.builtin.file:
-        src: "{{ paths.rke2.kubeconfig }}"
+        src: "{{ kubectl.config.source }}"
         dest: "{{ item }}"
         state: link
         force: true
       loop:
-        - "{{ paths.user.kubeconfig }}"
-        - /root/.kube/config
+        - "{{ kubectl.config.user }}"
+        - "{{ kubectl.config.root }}"
 
     - name: Set KUBECONFIG environment variable
       ansible.builtin.lineinfile:
         path: "{{ item }}"
-        line: "export KUBECONFIG={{ paths.rke2.kubeconfig }}"
+        line: "export KUBECONFIG={{ kubectl.config.source }}"
         regexp: "^export KUBECONFIG="
         create: true
       loop:
-        - "{{ paths.user.home }}/.bashrc"
-        - /root/.bashrc
+        - "{{ paths.user.bashrc }}"
+        - "{{ paths.system.root_bashrc }}"

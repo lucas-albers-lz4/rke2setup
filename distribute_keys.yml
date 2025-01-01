@@ -2,8 +2,6 @@
 - name: Distribute SSH Keys
   hosts: all
   gather_facts: false
-  vars:
-    ssh_public_key_path: "~/.ssh/id_ed25519.pub"
   
   pre_tasks:
     - name: Gather minimal facts

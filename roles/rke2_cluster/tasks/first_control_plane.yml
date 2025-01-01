@@ -2,7 +2,7 @@
 # First check if RKE2 is already installed and configured
 - name: Check if RKE2 is already configured
   ansible.builtin.stat:
-    path: /etc/rancher/rke2/config.yaml
+    path: "{{ paths.rke2.config }}/config.yaml"
   register: rke2_config
 
 - name: Slurp existing config
@@ -104,7 +104,7 @@
 
 - name: Wait for RKE2 binaries to be installed
   ansible.builtin.wait_for:
-    path: "/var/lib/rancher/rke2/bin/kubectl"
+    path: "{{ kubectl.binary.source }}"
     timeout: 300
   register: kubectl_binary
 
@@ -113,19 +113,19 @@
     msg:
       - "Kubectl binary exists: {{ kubectl_binary.stat.exists | default(false) }}"
       - "Wait time: {{ kubectl_binary.elapsed }}"
-      - "Path: /var/lib/rancher/rke2/bin/kubectl"
+      - "Path: {{ kubectl.binary.source }}"
 
 - name: Create kubectl symlink
   ansible.builtin.file:
-    src: "/var/lib/rancher/rke2/bin/kubectl"
-    dest: "/usr/local/bin/kubectl"
+    src: "{{ kubectl.binary.source }}"
+    dest: "{{ kubectl.binary.symlink }}"
     state: link
     force: true
   when: kubectl_binary.stat.exists | default(false)
 
 - name: Create .kube directory
   ansible.builtin.file:
-    path: "{{ paths.user.kube }}"
+    path: "{{ kubectl.config.user | dirname }}"
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -133,8 +133,8 @@
 
 - name: Copy kubeconfig
   ansible.builtin.copy:
-    src: "{{ paths.rke2.kubeconfig }}"
-    dest: "{{ paths.user.config }}"
+    src: "{{ kubectl.config.source }}"
+    dest: "{{ kubectl.config.user }}"
     remote_src: true
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -167,7 +167,7 @@
 
 - name: Wait for first control plane to be ready
   ansible.builtin.wait_for:
-    path: "{{ paths.rke2.kubeconfig }}"
+    path: "{{ kubectl.config.source }}"
     state: present
     timeout: "{{ timeout_startup }}"
   register: kubeconfig_file

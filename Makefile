@@ -1,4 +1,4 @@
-.PHONY: test generate clean help verify cleanup reboot setup-control setup-workers setup-cluster verify-cluster deploy-workflow configure-kubectl verify-kubectl verify-all-hosts verify-control-hosts verify-worker-hosts preview-configs
+.PHONY: test generate clean help verify cleanup reboot setup-control setup-workers setup-cluster verify-cluster deploy-workflow configure-kubectl verify-kubectl verify-all-hosts verify-control-hosts verify-worker-hosts preview-configs generate-inventory
 
 # Default target
 .DEFAULT_GOAL := help
@@ -18,10 +18,7 @@ test:  ## Run all tests
 	$(PYTEST) tests/ -v -s
 
 generate-inventory:  ## Generate inventory from hosts.txt
-	$(PYTHON) scripts/generate_inventory.py $(INVENTORY_FILE)
-
-generate-configs:  ## Generate RKE2 configs from inventory
-	$(PYTHON) scripts/generate_rke2_configs.py
+	scripts/update_inventory.sh
 
 generate: generate-inventory generate-configs  ## Generate both inventory and configs
 

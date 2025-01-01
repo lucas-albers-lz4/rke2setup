@@ -5,50 +5,50 @@
     state: directory
     mode: "0755"
   loop:
-    - /root/.kube
-    - /home/{{ ansible_user }}/.kube
+    - "{{ kubectl.config.root | dirname }}"
+    - "{{ kubectl.config.user | dirname }}"
 
 - name: Create symlinks for kubectl config
   ansible.builtin.file:
-    src: /etc/rancher/rke2/rke2.yaml
+    src: "{{ kubectl.config.source }}"
     dest: "{{ item }}"
     state: link
     force: true
   loop:
-    - /root/.kube/config
-    - /home/{{ ansible_user }}/.kube/config
+    - "{{ kubectl.config.root }}"
+    - "{{ kubectl.config.user }}"
 
 - name: Set KUBECONFIG environment variable
   ansible.builtin.lineinfile:
     path: "{{ item }}"
-    line: "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml"
+    line: "export KUBECONFIG={{ kubectl.config.source }}"
     regexp: "^export KUBECONFIG="
     create: true
   loop:
-    - /root/.bashrc
-    - /home/{{ ansible_user }}/.bashrc
+    - "{{ paths.system.root_bashrc }}"
+    - "{{ paths.user.bashrc }}"
 
 - name: Verify kubectl configuration
   ansible.builtin.stat:
-    path: /etc/rancher/rke2/rke2.yaml
+    path: "{{ kubectl.config.source }}"
   register: kubeconfig_stat
 
 - name: Fail if kubeconfig doesn't exist
   ansible.builtin.fail:
-    msg: "RKE2 kubeconfig not found at /etc/rancher/rke2/rke2.yaml"
+    msg: "RKE2 kubeconfig not found at {{ kubectl.config.source }}"
   when: not kubeconfig_stat.stat.exists
 
 - name: Verify cluster status
   environment:
-    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+    KUBECONFIG: "{{ kubectl.config.source }}"
   block:
     - name: Check node status
-      ansible.builtin.command: kubectl get nodes -o wide
+      ansible.builtin.command: "{{ kubectl.command }} get nodes -o wide"
       register: nodes_status
       changed_when: false
 
     - name: Check control plane pods
-      ansible.builtin.command: kubectl get pods -n kube-system -l tier=control-plane -o wide
+      ansible.builtin.command: "{{ kubectl.command }} get pods -n kube-system -l tier=control-plane -o wide"
       register: control_plane_pods
       changed_when: false
 
