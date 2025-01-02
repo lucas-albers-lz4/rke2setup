@@ -47,8 +47,8 @@
         state: present
         timeout: "{{ timeout_standard }}"
       loop:
-        - /var/lib/rancher/rke2/bin/kubectl
-        - /usr/local/bin/rke2
+        - "{{ paths.rke2.bin }}/kubectl"
+        - "{{ paths.system.bin }}/rke2"
       register: wait_result
 
     - name: Verify all required files exist

@@ -4,6 +4,11 @@
     path: "{{ paths.rke2.kubeconfig }}"
     state: present
     timeout: 300
+  register: kubeconfig_wait
+
+- name: Check kubeconfig file status
+  ansible.builtin.stat:
+    path: "{{ paths.rke2.kubeconfig }}"
   register: kubeconfig_file
 
 - name: Ensure user .kube directory exists

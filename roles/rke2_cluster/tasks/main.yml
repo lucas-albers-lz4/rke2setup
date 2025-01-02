@@ -45,6 +45,5 @@
     - verify_control_plane
     - control_plane
 
-- name: Include airgap image tasks
-  ansible.builtin.include_tasks: airgap_images.yml
-  when: airgap_install | default(false) | bool
+- name: Include airgap setup
+  ansible.builtin.include_tasks: airgap_setup.yml

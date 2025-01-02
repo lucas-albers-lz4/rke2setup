@@ -70,6 +70,6 @@
 
 - name: Wait for RKE2 binaries to be installed
   ansible.builtin.wait_for:
-    path: /var/lib/rancher/rke2/bin/kubectl
+    path: "{{ paths.rke2.bin }}/kubectl"
     timeout: 300
   register: kubectl_binary
