@@ -72,7 +72,7 @@
 
 - name: Wait for RKE2 server to be ready
   ansible.builtin.wait_for:
-    path: "{{ kubectl.binary.source }}"
+    path: "{{ paths.rke2.bin }}/kubectl"
     state: present
     timeout: "{{ timeout_startup }}"
 

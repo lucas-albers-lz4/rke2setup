@@ -60,3 +60,11 @@
           - ""
           - "Control Plane Pods:"
           - "{{ control_plane_pods.stdout_lines }}"
+
+- name: Verify kubectl access
+  ansible.builtin.command: "{{ paths.rke2.bin }}/kubectl version --client"
+  environment:
+    KUBECONFIG: "{{ kubectl.config.source }}"
+  register: kubectl_version
+  changed_when: false
+  become: true

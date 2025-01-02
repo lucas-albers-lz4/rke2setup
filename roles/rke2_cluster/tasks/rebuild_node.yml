@@ -239,13 +239,8 @@
     msg: "Unable to reach RKE2 documentation site. Network connectivity issue detected."
   when: rke2_docs_check.status != 200
 
-- name: Verify airgap prerequisites
-  include_tasks: verify_airgap.yml
-  when: airgap_install | default(false) | bool
-
-- name: Prepare airgap images
-  include_tasks: airgap_images.yml
-  when: airgap_install | default(false) | bool
+- name: Include airgap setup
+  ansible.builtin.include_tasks: airgap_setup.yml
 
 - name: Install RKE2
   ansible.builtin.shell: |
