@@ -153,6 +153,10 @@
   become: true
   when: airgap_install | default(false) | bool
 
+- name: Include airgap setup
+  ansible.builtin.include_tasks: airgap/main.yml
+  when: airgap_install | default(false) | bool
+
 # Now start the service
 - name: Start RKE2 server service
   ansible.builtin.systemd:
