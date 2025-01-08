@@ -1,12 +1,13 @@
 ---
 - name: Set version directory path
   ansible.builtin.set_fact:
-    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version.stdout }}"
+    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ (rke2_version.stdout if rke2_version is mapping else rke2_version) | default('v1.31.4+rke2r1') | string }}"
 
 - name: Create local download directories
   ansible.builtin.file:
     path: "{{ version_dir }}"
     state: directory
+    mode: '0755'
   delegate_to: localhost
   become: false
   run_once: true
