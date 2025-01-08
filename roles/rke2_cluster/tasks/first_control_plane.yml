@@ -80,6 +80,36 @@
   become: true
   ignore_errors: false
 
+- name: Ensure RKE2 manifests directory exists
+  ansible.builtin.file:
+    path: /var/lib/rancher/rke2/server/manifests
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+- name: Configure Cilium HelmChartConfig (required if we disable kube-proxy)
+  ansible.builtin.copy:
+    dest: /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml
+    content: |
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: rke2-cilium
+        namespace: kube-system
+      spec:
+        valuesContent: |-
+          kubeProxyReplacement: true
+          k8sServiceHost: "127.0.0.1"
+          k8sServicePort: "6443"
+          cni:
+            chainingMode: "none"  # Cilium is the only CNI
+    mode: "0644"
+    owner: root
+    group: root
+  become: true
+
 - name: Set version directory path
   ansible.builtin.set_fact:
     version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version | default('v1.31.4+rke2r1') }}"
