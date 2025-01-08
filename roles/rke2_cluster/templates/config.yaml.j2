@@ -38,8 +38,10 @@ server: https://{{ hostvars[groups['control_plane_nodes'][0]]['ansible_host'] }}
 token: {{ rke2_token }}
 
 # Node role labels and taints
-node-label:
 {% if inventory_hostname in groups['control_plane_nodes'] %}
+# First control plane node initializes the cluster
+disable-kube-proxy: true
+node-label:
   - "node.kubernetes.io/instance-type=control-plane"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=control-plane"
@@ -47,6 +49,7 @@ node-label:
 #node-taint:
 #  - "CriticalAddonsOnly=true:NoSchedule"
 {% else %}
+node-label:
   - "node.kubernetes.io/instance-type=worker"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=mixed"

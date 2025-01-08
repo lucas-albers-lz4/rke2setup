@@ -1,6 +1,10 @@
 ---
 - name: Collect cluster health information
   block:
+    - name: Set delegation target
+      ansible.builtin.set_fact:
+        delegation_target: "{{ groups['control_plane_nodes'][0] }}"
+
     - name: Check node status
       ansible.builtin.command:
         cmd: "{{ paths.rke2.bin }}/kubectl get nodes -o wide"
