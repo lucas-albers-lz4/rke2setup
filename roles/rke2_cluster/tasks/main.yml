@@ -46,4 +46,5 @@
     - control_plane
 
 - name: Include airgap setup
-  ansible.builtin.include_tasks: airgap_setup.yml
+  ansible.builtin.include_tasks: airgap/main.yml
+  when: airgap_install | default(false) | bool
