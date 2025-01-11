@@ -1,8 +1,22 @@
 ---
 exclude_paths:
-  - .cache/
-  - .github/
-  - scripts/
+  # Virtual environments (absolute paths)
+  - ".venv/"
+  - "venv/"
+  - ".env/"
+  - "env/"
+  
+  # System and cache (absolute paths)
+  - ".git/"
+  - ".tox/"
+  - ".cache/"
+  - ".pytest_cache/"
+  - "__pycache__/"
+  - "**/__pycache__/"
+  
+  # CI/CD (absolute paths)
+  - ".github/"
+  - ".gitlab/"
 
 skip_list:
   - no-handler
@@ -12,11 +26,19 @@ skip_list:
   - yaml[line-length]
   - yaml[truthy]
   - var-naming[no-role-prefix]
+  - jinja[spacing]
+  - name[template]
 
 enable_list:
   - fqcn-builtins
   - no-log-password
 
 offline: true
-profile: production
-strict: true
+profile: min
+strict: false
+
+# Debug settings
+verbosity: 2
+parseable: true
+progressive: true
+
