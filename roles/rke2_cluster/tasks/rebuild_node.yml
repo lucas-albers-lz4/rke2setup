@@ -86,6 +86,39 @@
   delegate_to: "{{ delegation_target }}"
   become: true
 
+- name: Attempt node preparation
+  block:
+    - name: Cordon node before rebuild
+      ansible.builtin.command: >-
+        {{ kubectl.command }} cordon {{ inventory_hostname }}
+      delegate_to: "{{ delegation_target }}"
+      when: not inventory_hostname == groups['control_plane_nodes'][0]
+      register: cordon_result
+      ignore_errors: true
+
+    - name: Drain node with recommended settings
+      ansible.builtin.command: >-
+        {{ kubectl.command }} drain {{ inventory_hostname }}
+        --ignore-daemonsets
+        --delete-emptydir-data
+        --force
+        --grace-period=60
+        --timeout=2m
+      delegate_to: "{{ delegation_target }}"
+      when: 
+        - not inventory_hostname == groups['control_plane_nodes'][0]
+        - cordon_result is not failed
+      register: drain_result
+      failed_when: false
+
+  rescue:
+    - name: Log node preparation status
+      ansible.builtin.debug:
+        msg: |
+          Warning: Node {{ inventory_hostname }} is unresponsive to cordon/drain operations.
+          This is expected if the node is already down.
+          Proceeding with rebuild...
+
 - name: Set token from existing cluster
   ansible.builtin.set_fact:
     rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token }}"
@@ -297,6 +330,16 @@
   become: true
   when: airgap_install | default(false) | bool
 
+- name: Configure RKE2 registries
+  ansible.builtin.copy:
+    dest: "/etc/rancher/rke2/registries.yaml"
+    content: |
+      mirrors:
+        "*":
+    mode: '0644'
+    owner: root
+    group: root
+    
 - name: Start RKE2 service
   ansible.builtin.systemd:
     name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
@@ -413,4 +456,5 @@
           Time: {{ ansible_date_time.iso8601 }}
           Details:
           {{ node_diagnostics.stdout }}
+
 
