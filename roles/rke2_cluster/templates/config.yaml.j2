@@ -1,9 +1,8 @@
 {% if rke2_config.write_kubeconfig_mode is defined %}
 write-kubeconfig-mode: "{{ rke2_config.write_kubeconfig_mode }}"
 {% endif %}
-debug : true
 cni: cilium
-disable-network-policy: true
+
 # Cluster member identification
 node-name: {{ inventory_hostname }}
 
@@ -41,6 +40,10 @@ token: {{ rke2_token }}
 {% if inventory_hostname in groups['control_plane_nodes'] %}
 # First control plane node initializes the cluster
 disable-kube-proxy: true
+
+#refuses to start with this option 
+#embedded-registry: true #requires this version to work : v1.26.13+rke2r1
+
 node-label:
   - "node.kubernetes.io/instance-type=control-plane"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
@@ -61,6 +64,8 @@ additional-sans:
 {% for host in groups['control_plane_nodes'] %}
   - "{{ host }}"
   - "{{ hostvars[host]['ansible_host'] }}"
+enabled:
+  - embedded-registry
 {% endfor %}
 {% if groups['worker_nodes'] is defined %}
 {% for host in groups['worker_nodes'] %}
