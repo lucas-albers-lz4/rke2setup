@@ -3,7 +3,8 @@
   hosts: "{{ target_host | default('all') }}"
   become: true
   gather_facts: true
-
+  serial:
+    - "{{ '1' if inventory_hostname in groups['controllers'] else '2' }}"
   vars_files:
     - roles/rke2_cluster/vars/main.yml
     - roles/rke2_cluster/vars/kubectl.yml
