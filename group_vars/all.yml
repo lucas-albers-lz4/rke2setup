@@ -7,3 +7,14 @@ etcdctl_params: >-
   --cacert=/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
   --cert=/var/lib/rancher/rke2/server/tls/etcd/server-client.crt
   --key=/var/lib/rancher/rke2/server/tls/etcd/server-client.key
+
+# Default RKE2 data paths
+rke2_data_dir: /var/lib/rancher/rke2
+rke2_agent_dir: "{{ rke2_data_dir }}/agent"
+
+# Mount configuration (optional per node)
+rke2_agent_mount:
+  enabled: false  # Default to false, enable per node
+  device: ""      # Device to mount
+  fstype: xfs     # Default filesystem type
+  opts: defaults  # Default mount options

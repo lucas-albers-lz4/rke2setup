@@ -1,0 +1,52 @@
+- name: Check if agent directory exists
+  stat:
+    path: "{{ rke2_agent_dir }}"
+  register: agent_dir_stat
+
+- name: Backup existing agent directory if needed
+  command: mv {{ rke2_agent_dir }} {{ rke2_agent_dir }}.bak
+  when:
+    - rke2_agent_mount.enabled | bool
+    - agent_dir_stat.stat.exists
+    - not agent_dir_stat.stat.ismount
+  ignore_errors: true
+
+- name: Ensure agent directory exists
+  file:
+    path: "{{ rke2_agent_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  when: rke2_agent_mount.enabled | bool
+
+- name: Configure agent directory mount
+  mount:
+    path: "{{ rke2_agent_dir }}"
+    src: "{{ rke2_agent_mount.device }}"
+    fstype: "{{ rke2_agent_mount.fstype }}"
+    opts: "{{ rke2_agent_mount.opts }}"
+    state: mounted
+  when: 
+    - rke2_agent_mount.enabled | bool
+    - rke2_agent_mount.device != "" 
+
+- name: Verify mount configuration
+  assert:
+    that:
+      - not rke2_agent_mount.enabled or rke2_agent_mount.device != ""
+    msg: "When enabling agent mount, device must be specified"
+  when: rke2_agent_mount.enabled | bool
+
+- name: Check if device exists
+  stat:
+    path: "{{ rke2_agent_mount.device }}"
+  register: device_stat
+  when: rke2_agent_mount.enabled | bool
+
+- name: Verify device exists
+  assert:
+    that:
+      - device_stat.stat.exists
+    msg: "Specified device {{ rke2_agent_mount.device }} does not exist"
+  when: rke2_agent_mount.enabled | bool 

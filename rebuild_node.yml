@@ -1,10 +1,9 @@
 ---
-- name: Rebuild RKE2 Node
-  hosts: "{{ target_host | default('all') }}"
+- name: Rebuild RKE2 Control Plane Nodes
+  hosts: "{{ target_host | default(groups['control_plane_nodes']) }}"
   become: true
   gather_facts: true
-  serial:
-    - "{{ '1' if inventory_hostname in groups['controllers'] else '2' }}"
+  serial: 1
   vars_files:
     - roles/rke2_cluster/vars/main.yml
     - roles/rke2_cluster/vars/kubectl.yml
@@ -14,3 +13,20 @@
       ansible.builtin.include_role:
         name: rke2_cluster
         tasks_from: rebuild_node.yml
+      when: inventory_hostname in groups['control_plane_nodes']
+
+- name: Rebuild RKE2 Worker Nodes
+  hosts: "{{ target_host | default(groups['worker_nodes']) }}"
+  become: true
+  gather_facts: true
+  serial: "50%"
+  vars_files:
+    - roles/rke2_cluster/vars/main.yml
+    - roles/rke2_cluster/vars/kubectl.yml
+
+  tasks:
+    - name: Include node rebuild tasks
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: rebuild_node.yml
+      when: inventory_hostname not in groups['control_plane_nodes']

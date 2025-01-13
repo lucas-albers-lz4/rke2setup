@@ -1,0 +1,57 @@
+---
+- name: Check current mount status
+  ansible.builtin.shell: findmnt {{ paths.rke2.agent }}
+  register: current_mount
+  ignore_errors: true
+  when: mounts.agent.enabled | bool
+
+- name: Verify mount options if already mounted
+  ansible.builtin.shell: findmnt -no OPTIONS {{ paths.rke2.agent }}
+  register: mount_options
+  when: 
+    - mounts.agent.enabled | bool
+    - current_mount.rc == 0
+
+- name: Set mount status fact
+  ansible.builtin.set_fact:
+    mount_exists: "{{ current_mount.rc == 0 }}"
+    mount_correct: "{{ 
+      current_mount.rc == 0 and 
+      'pquota' in (mount_options.stdout | default('')) and 
+      'prjquota' in (mount_options.stdout | default(''))
+    }}"
+
+# Only proceed with mount tasks if not already correctly mounted
+- name: Ensure parent directories exist
+  ansible.builtin.file:
+    path: "{{ paths.rke2.data }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  when: 
+    - mounts.agent.enabled | bool
+    - not mount_correct | bool
+
+- name: Ensure agent directory exists
+  ansible.builtin.file:
+    path: "{{ paths.rke2.agent }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  when: 
+    - mounts.agent.enabled | bool
+    - not mount_correct | bool
+
+- name: Mount agent directory
+  ansible.builtin.mount:
+    path: "{{ paths.rke2.agent }}"
+    src: "{{ mounts.agent.device }}"
+    fstype: xfs
+    opts: "defaults,pquota,prjquota"
+    state: mounted
+  when: 
+    - mounts.agent.enabled | bool
+    - mounts.agent.device is defined
+    - not mount_correct | bool 

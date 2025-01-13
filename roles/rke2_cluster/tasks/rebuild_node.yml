@@ -86,42 +86,56 @@
   delegate_to: "{{ delegation_target }}"
   become: true
 
-- name: Attempt node preparation
-  block:
-    - name: Cordon node before rebuild
-      ansible.builtin.command: >-
-        {{ kubectl.command }} cordon {{ inventory_hostname }}
-      delegate_to: "{{ delegation_target }}"
-      when: not inventory_hostname == groups['control_plane_nodes'][0]
-      register: cordon_result
-      ignore_errors: true
+- name: Check if node exists in cluster
+  ansible.builtin.shell: |
+    {{ kubectl.command }} get node {{ inventory_hostname | lower }} --no-headers
+  register: node_exists
+  delegate_to: "{{ delegation_target }}"
+  become: true
+  failed_when: false
+  changed_when: false
 
-    - name: Drain node with recommended settings
-      ansible.builtin.command: >-
-        {{ kubectl.command }} drain {{ inventory_hostname }}
-        --ignore-daemonsets
-        --delete-emptydir-data
-        --force
-        --grace-period=60
-        --timeout=2m
-      delegate_to: "{{ delegation_target }}"
-      when: 
-        - not inventory_hostname == groups['control_plane_nodes'][0]
-        - cordon_result is not failed
-      register: drain_result
-      failed_when: false
+- name: Check node status in cluster
+  ansible.builtin.shell: |
+    {{ kubectl.command }} get node {{ inventory_hostname | lower }} -o jsonpath='{.spec.unschedulable},{.status.conditions[?(@.type=="Ready")].status}'
+  register: node_status
+  delegate_to: "{{ delegation_target }}"
+  become: true
+  failed_when: false
+  changed_when: false
 
-  rescue:
-    - name: Log node preparation status
-      ansible.builtin.debug:
-        msg: |
-          Warning: Node {{ inventory_hostname }} is unresponsive to cordon/drain operations.
-          This is expected if the node is already down.
-          Proceeding with rebuild...
-
-- name: Set token from existing cluster
+- name: Set node status facts
   ansible.builtin.set_fact:
-    rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token }}"
+    node_exists: "{{ node_status.rc == 0 }}"
+    node_cordoned: "{{ 'true' in (node_status.stdout.split(',')[0] | default('')) }}"
+    node_ready: "{{ 'True' in (node_status.stdout.split(',')[1] | default('')) }}"
+
+- name: Debug node status
+  ansible.builtin.debug:
+    msg: 
+      - "Node exists: {{ node_exists }}"
+      - "Node cordoned: {{ node_cordoned }}"
+      - "Node ready: {{ node_ready }}"
+
+- name: Cordon node before rebuild
+  ansible.builtin.command: >-
+    {{ kubectl.command }} cordon {{ inventory_hostname | lower }}
+  delegate_to: "{{ delegation_target }}"
+  become: true
+  when: 
+    - node_exists
+    - not node_cordoned
+    - node_ready
+  register: cordon_result
+  failed_when: false
+
+- name: Include drain node tasks
+  ansible.builtin.include_tasks: drain_node.yml
+  when: 
+    - node_exists
+    - node_ready
+    - not node_cordoned
+    - cordon_result is not failed
 
 - name: Ensure RKE2 directories exist
   ansible.builtin.file:
@@ -249,13 +263,25 @@
   with_items: "{{ rke2_dirs }}"
   become: true
 
+- name: Extract token from existing config
+  ansible.builtin.shell: |
+    grep "token:" {{ paths.rke2.config }}/config.yaml | awk '{print $2}'
+  register: token_extract
+  delegate_to: "{{ delegation_target }}"
+  become: true
+  changed_when: false
+
+- name: Set token fact
+  ansible.builtin.set_fact:
+    rke2_token: "{{ token_extract.stdout }}"
+
 - name: Configure node
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: /etc/rancher/rke2/config.yaml
-    mode: '0644'
-    owner: root
-    group: root
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: "0644"
+  vars:
+    node_token: "{{ rke2_token }}"
   become: true
 
 - name: Check network connectivity to RKE2 documentation

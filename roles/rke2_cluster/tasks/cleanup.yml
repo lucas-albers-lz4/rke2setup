@@ -9,15 +9,53 @@
     - rke2-agent
   ignore_errors: true
 
+- name: Run RKE2 killall script if exists
+  ansible.builtin.command:
+    cmd: /usr/local/bin/rke2-killall.sh
+  failed_when: false
+  ignore_errors: true
+
 - name: Pause to allow processes to terminate
   ansible.builtin.wait_for:
     timeout: "{{ timeout_short }}"
 
-- name: Remove RKE2 files and directories
+- name: Get mount information
+  ansible.builtin.shell: mount | grep "{{ paths.rke2.agent }}"
+  register: mount_check
+  failed_when: false
+  changed_when: false
+
+- name: Unmount agent directory if mounted
+  ansible.builtin.mount:
+    path: "{{ paths.rke2.agent }}"
+    state: unmounted
+  when: mount_check.rc == 0
+  ignore_errors: true
+
+- name: Remove mount from fstab
+  ansible.builtin.mount:
+    path: "{{ paths.rke2.agent }}"
+    state: absent
+  when: 
+    - mounts.agent.enabled | bool
+    - mounts.agent.device is defined
+
+- name: Pause after unmounting
+  ansible.builtin.wait_for:
+    timeout: 5
+  when: mount_check.rc == 0
+
+- name: Run RKE2 uninstall script
+  ansible.builtin.command:
+    cmd: /usr/local/bin/rke2-uninstall.sh
+  failed_when: false
+  ignore_errors: true
+
+- name: Remove remaining RKE2 directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
-  loop:
+  with_items:
     - /var/lib/rancher/rke2
     - /etc/rancher/rke2
     - /usr/local/bin/rke2

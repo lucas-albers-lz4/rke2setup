@@ -1,0 +1,30 @@
+---
+- name: Include airgap variables
+  ansible.builtin.include_vars:
+    file: airgap.yml
+
+- name: Set version directory path
+  ansible.builtin.set_fact:
+    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ (rke2_version.stdout if rke2_version is mapping else rke2_version) | default('v1.31.4+rke2r1') | string }}"
+
+- name: Map architecture to RKE2 format
+  ansible.builtin.set_fact:
+    rke2_arch: >-
+      {{
+        'amd64' if ansible_architecture == 'x86_64'
+        else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
+        else ansible_architecture
+      }}
+
+- name: Include verification tasks
+  ansible.builtin.include_tasks: verify.yml
+  when: airgap_install | default(false) | bool
+
+- name: Include download tasks
+  ansible.builtin.include_tasks: download.yml
+  when: airgap_install | default(false) | bool
+  # Only run if verification failed or files don't exist
+
+- name: Include deployment tasks
+  ansible.builtin.include_tasks: deploy.yml
+  when: airgap_install | default(false) | bool 

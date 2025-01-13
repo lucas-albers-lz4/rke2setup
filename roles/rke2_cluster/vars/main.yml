@@ -7,6 +7,7 @@ paths:
   rke2:
     config: /etc/rancher/rke2
     data: /var/lib/rancher/rke2
+    agent: /var/lib/rancher/rke2/agent
     bin: /var/lib/rancher/rke2/bin
     kubeconfig: /etc/rancher/rke2/rke2.yaml
   user:
@@ -35,3 +36,11 @@ rke2_config:
   write_kubeconfig_mode: "0644"
   token: "{{ rke2_token | default('') }}"
   tls_san: "{{ tls_san | default([]) }}"
+
+# Add new mount configuration section
+mounts:
+  agent:
+    enabled: false  # Default to false, enable via inventory
+    device: ""      # Device path
+    fstype: xfs     # Only support XFS
+    opts: "defaults,pquota,prjquota"  # Standard XFS options with project quotas
