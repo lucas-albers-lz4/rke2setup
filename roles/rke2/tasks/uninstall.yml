@@ -1,0 +1,43 @@
+- name: Stop RKE2 service
+  systemd:
+    name: "{{ 'rke2-' + (rke2_type | default('server')) }}"
+    state: stopped
+  when: rke2_uninstall | bool
+  ignore_errors: true
+
+- name: Run uninstall script
+  command: /usr/local/bin/rke2-uninstall.sh
+  when: rke2_uninstall | bool
+  ignore_errors: true
+
+- name: Unmount agent directory
+  mount:
+    path: "{{ rke2_agent_dir }}"
+    state: unmounted
+  when: 
+    - rke2_uninstall | bool
+    - rke2_agent_mount.enabled | bool
+
+- name: Remove mount from fstab
+  mount:
+    path: "{{ rke2_agent_dir }}"
+    state: absent
+  when: 
+    - rke2_uninstall | bool
+    - rke2_agent_mount.enabled | bool
+
+# Clean up remaining directories
+- name: Remove RKE2 directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - "/etc/rancher/rke2"
+    - "/run/rancher/rke2"
+    - "/var/lib/kubelet"
+    - "/var/lib/kubelet.bak"
+    - "/var/lib/cni"
+    - "/etc/cni"
+    - "/opt/cni"
+    - "/run/k3s"
+  when: rke2_uninstall | bool 

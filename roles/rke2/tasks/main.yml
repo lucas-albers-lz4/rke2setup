@@ -1,0 +1,11 @@
+- name: Include prepare tasks
+  include_tasks: prepare.yml
+  when: not (rke2_uninstall | bool)
+
+- name: Install RKE2
+  include_tasks: install.yml
+  when: not (rke2_uninstall | bool)
+
+- name: Configure RKE2
+  include_tasks: configure.yml
+  when: not (rke2_uninstall | bool) 
