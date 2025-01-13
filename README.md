@@ -124,7 +124,7 @@ ansible-playbook -i inventory/rke2.yml distribute_keys.yml sudo_setup -k -K
 ```
 
 Note k1 is the first control node in my examples, it is the one that will be used to build the cluster.
-So we build the first control node first. and then build the rest of the cluster
+So we build the first control node first, and then build the rest of the cluster
 
 check that the network and host configuration is correct on all the nodes
 ```bash
@@ -148,7 +148,7 @@ helm get values rke2-cilium -n kube-system > helm-cilium-current-values.yaml
 helm upgrade rke2-cilium rke2-charts/rke2-cilium --namespace kube-system --version 1.16.400 --values helm-cilium-current-values.yaml
 ```
 
-By defaault we use airgap to download the initial images as zst images for arm64 and amd64which rke2 then unpacks and uses for the initial container images
+By default we use airgap to download the initial images as zst images for arm64 and amd64which rke2 then unpacks and uses for the initial container images
 To disable that pass into the play like such
 ```bash
 -e "rke2_airgap_images=false"
