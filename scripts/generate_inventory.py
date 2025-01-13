@@ -159,6 +159,103 @@ def write_inventory_file(inventory_data, file_path):
         f.write(header)
         yaml.dump(inventory_data, f, default_flow_style=False, sort_keys=False)
 
+def generate_node_vars(node):
+    vars = {}
+    # ... existing code ...
+    
+    # Add mount configuration if device is specified
+    if node.get('agent_mount_device'):
+        vars['mounts'] = {
+            'agent': {
+                'enabled': True,
+                'device': node['agent_mount_device'],
+                'fstype': 'xfs',
+                'opts': 'defaults,pquota,prjquota'
+            }
+        }
+    
+    return vars
+
+def parse_host_line(line):
+    parts = line.strip().split()
+    host_vars = {}
+    hostname = parts[0]
+    
+    if len(parts) > 1:
+        # Parse IP address if it doesn't contain '='
+        if '=' not in parts[1]:
+            host_vars['ansible_host'] = parts[1]
+        
+        # Parse additional parameters
+        for part in parts[1:]:  # Start from part 1 to catch all parameters
+            if '=' in part:
+                key, value = part.split('=', 1)
+                if key == 'agent_mount_device':
+                    host_vars['mounts'] = {
+                        'agent': {
+                            'enabled': True,
+                            'device': value,
+                            'fstype': 'xfs',
+                            'opts': 'defaults,pquota,prjquota'
+                        }
+                    }
+    
+    return hostname, host_vars
+
+def generate_inventory(hosts_file):
+    inventory = {
+        'all': {
+            'children': {
+                'six_node_cluster': {
+                    'children': {
+                        'control_plane_nodes': {'hosts': {}},
+                        'worker_nodes': {'hosts': {}}
+                    }
+                }
+            },
+            'vars': {}
+        }
+    }
+    
+    ip_mappings = {}
+    current_group = None
+    
+    with open(hosts_file, 'r') as f:
+        lines = f.readlines()
+    
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        
+        if line.startswith('[') and line.endswith(']'):
+            current_group = line[1:-1]
+            continue
+        
+        if current_group == 'vars':
+            if '=' in line:
+                key, value = line.split('=', 1)
+                inventory['all']['vars'][key.strip()] = value.strip()
+        elif current_group == 'six_node':
+            hostname, vars = parse_host_line(line)
+            ip_mappings[hostname] = vars
+        elif current_group in ['control_plane_nodes', 'worker_nodes']:
+            hostname = line.strip()
+            if hostname in ip_mappings:
+                node_vars = ip_mappings[hostname]
+                inventory['all']['children']['six_node_cluster']['children'][current_group]['hosts'][hostname] = node_vars
+
+    # Add default variables
+    inventory['all']['vars'].update({
+        'ansible_user': 'ubuntu',
+        'ansible_python_interpreter': '/usr/bin/python3',
+        'ansible_ssh_common_args': '-o StrictHostKeyChecking=no',
+        'ssh_public_key_path': inventory['all']['vars'].get('ssh_public_key_path', '~/.ssh/id_ed25519.pub'),
+        'rke2_version': inventory['all']['vars'].get('rke2_version', 'v1.31.4+rke2r1')
+    })
+
+    return inventory
+
 def main():
     if len(sys.argv) != 2:
         print("Usage: generate_inventory.py <hosts_file>")
@@ -168,18 +265,8 @@ def main():
     output_file = 'inventory/rke2.yml'
     
     try:
-        # Parse hosts.txt
-        control_plane_nodes, worker_nodes, vars_dict = parse_hosts_file(hosts_file)
-        
-        # Validate node data
-        validate_node_data(control_plane_nodes + worker_nodes)
-        
-        # Generate inventory structure
-        inventory = generate_inventory_structure(control_plane_nodes, worker_nodes)
-        
-        # Update with any vars from hosts.txt
-        if vars_dict:
-            inventory['all']['vars'].update(vars_dict)
+        # Generate inventory using our new function
+        inventory = generate_inventory(hosts_file)
         
         # Write to file
         write_inventory_file(inventory, output_file)
