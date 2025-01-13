@@ -1,0 +1,73 @@
+---
+- name: Drain node with monitoring
+  ansible.builtin.shell: |
+    set -e
+    NODE="{{ inventory_hostname | lower }}"
+    TIMEOUT=300  # 5 minutes
+    INTERVAL=5
+    ELAPSED=0
+    
+    echo "Starting drain operation for node: $NODE"
+    
+    # Start drain in background
+    {{ kubectl.command }} drain "$NODE" \
+      --ignore-daemonsets \
+      --delete-emptydir-data \
+      --force \
+      --grace-period=60 \
+      --timeout=5m &
+    DRAIN_PID=$!
+    
+    # Monitor drain progress
+    while kill -0 $DRAIN_PID 2>/dev/null; do
+      if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "Drain operation timed out after ${TIMEOUT}s"
+        kill $DRAIN_PID
+        exit 1
+      fi
+      
+      echo "=== Remaining pods on $NODE (${ELAPSED}s elapsed) ==="
+      {{ kubectl.command }} get pods --all-namespaces -o wide | \
+        grep "$NODE" | \
+        grep -v "Completed" | \
+        grep -v "daemon-set" || true
+      
+      # Get non-daemonset pods count
+      POD_COUNT=$({{ kubectl.command }} get pods --all-namespaces -o wide | \
+        grep "$NODE" | \
+        grep -v "Completed" | \
+        grep -v "daemon-set" | \
+        wc -l)
+      
+      echo "Total remaining pods: $POD_COUNT"
+      
+      if [ $POD_COUNT -eq 0 ]; then
+        echo "All pods successfully evacuated"
+        break
+      fi
+      
+      sleep $INTERVAL
+      ELAPSED=$((ELAPSED + INTERVAL))
+    done
+    
+    # Wait for drain to complete and capture exit status
+    wait $DRAIN_PID
+    DRAIN_STATUS=$?
+    
+    if [ $DRAIN_STATUS -eq 0 ]; then
+      echo "Node drain completed successfully"
+      exit 0
+    else
+      echo "Node drain failed with status: $DRAIN_STATUS"
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  register: drain_result
+  delegate_to: "{{ delegation_target }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ kubectl.config }}"
+  failed_when: 
+    - drain_result.rc != 0
+    - "'already cordoned' not in drain_result.stderr | default('')" 
