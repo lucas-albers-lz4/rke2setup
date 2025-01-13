@@ -1,0 +1,25 @@
+---
+- name: Ensure airgap images directory exists on remote
+  ansible.builtin.file:
+    path: "{{ airgap.paths.images_dir }}"
+    state: directory
+    mode: "{{ airgap.file_modes.directories }}"
+    owner: root
+    group: root
+  become: true
+
+- name: Copy airgap images to node
+  ansible.builtin.copy:
+    src: "{{ version_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    dest: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    mode: "{{ airgap.file_modes.downloads }}"
+    owner: root
+    group: root
+  become: true
+  register: copy_result
+
+- name: Verify copied images
+  ansible.builtin.stat:
+    path: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+  register: remote_image
+  failed_when: not remote_image.stat.exists 
