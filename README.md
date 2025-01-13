@@ -188,12 +188,6 @@ Common issues and solutions:
 1. Network Security
    - Use private network for inter-node communication
    - Enable firewall rules
-   - [Add more security recommendations...]
 
 ## Upgrade Instructions
 
-1. Upgrading RKE2 Version
-   ```bash
-   # Update rke2_version in inventory/rke2.yml
-   ansible-playbook -i inventory/rke2.yml upgrade.yml
-   ```
