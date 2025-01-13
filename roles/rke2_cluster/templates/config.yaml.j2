@@ -38,19 +38,13 @@ token: {{ rke2_token }}
 
 # Node role labels and taints
 {% if inventory_hostname in groups['control_plane_nodes'] %}
-# First control plane node initializes the cluster
+# Control plane configuration
 disable-kube-proxy: true
-
-#refuses to start with this option 
-#embedded-registry: true #requires this version to work : v1.26.13+rke2r1
 
 node-label:
   - "node.kubernetes.io/instance-type=control-plane"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=control-plane"
-#removed this because it was causing the nodes to not start
-#node-taint:
-#  - "CriticalAddonsOnly=true:NoSchedule"
 {% else %}
 node-label:
   - "node.kubernetes.io/instance-type=worker"
@@ -58,18 +52,21 @@ node-label:
   - "workload.type=mixed"
 {% endif %}
 
-# Additional cluster members (for service discovery)
+# Additional cluster configuration
 cluster-domain: cluster.local
 additional-sans:
 {% for host in groups['control_plane_nodes'] %}
   - "{{ host }}"
   - "{{ hostvars[host]['ansible_host'] }}"
-enabled:
-  - embedded-registry
 {% endfor %}
 {% if groups['worker_nodes'] is defined %}
 {% for host in groups['worker_nodes'] %}
   - "{{ host }}"
   - "{{ hostvars[host]['ansible_host'] }}"
 {% endfor %}
+{% endif %}
+
+{% if inventory_hostname in groups['control_plane_nodes'] %}
+enabled:
+  - embedded-registry
 {% endif %}
