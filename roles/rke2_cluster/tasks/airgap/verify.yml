@@ -28,9 +28,4 @@
 
     - name: Set verification status
       ansible.builtin.set_fact:
-        airgap_verified: >-
-          {{
-            download_dir.stat.exists and
-            (image_files.results | map(attribute='stat.exists') | list | select('false') | list | length == 0) and
-            (integrity_check.results | map(attribute='rc') | list | select('ne', 0) | list | length == 0)
-          }} 
+        verification_passed: "{{ image_files.results | map(attribute='stat.exists') | select('true') | list | length == airgap.architectures | length }}" 

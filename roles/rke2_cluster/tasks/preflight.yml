@@ -60,3 +60,11 @@
       register: ufw_status
       failed_when: "'Status: active' in ufw_status.stdout"
       changed_when: false
+
+- name: Verify RKE2 version is defined
+  ansible.builtin.assert:
+    that:
+      - (rke2_version.stdout | default(rke2_version)) is match("^v[0-9]+\\.[0-9]+\\.[0-9]+\\+rke2r[0-9]+$")
+    msg: >-
+      RKE2 version must be defined in inventory/rke2.yml vars section in the format 'vX.Y.Z+rke2rN'.
+      Current value: {{ rke2_version.stdout | default(rke2_version) }}

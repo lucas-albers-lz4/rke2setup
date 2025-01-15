@@ -6,17 +6,13 @@
     mode: '0755'
   delegate_to: localhost
   become: false
-  run_once: true
-  when: not airgap_verified | default(false)
 
 - name: Download RKE2 images
-  get_url:
-    url: "{{ airgap.urls.base | replace('+', '%2B') }}/rke2-images.linux-{{ item }}.tar.zst"
+  ansible.builtin.get_url:
+    url: "{{ airgap.download.base_url }}/{{ rke2_version_clean }}/rke2-images.linux-{{ item }}.tar.zst"
     dest: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
-    mode: "{{ airgap.file_modes.downloads }}"
-    timeout: 300
-    force: "{{ not airgap_verified | default(true) }}"
+    mode: '0644'
   loop: "{{ airgap.architectures }}"
   delegate_to: localhost
   become: false
-  when: not airgap_verified | default(false) 
+  when: not image_files.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | select('true') | list | length 

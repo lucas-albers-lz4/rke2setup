@@ -19,8 +19,8 @@ tls-san:
 {% endfor %}
 {% if groups['worker_nodes'] is defined %}
 {% for host in groups['worker_nodes'] %}
-  - "{{ host }}"  {# Hostname #}
-  - "{{ hostvars[host]['ansible_host'] }}"  {# IP address #}
+  - "{{ host }}"  # Hostname
+  - "{{ hostvars[host]['ansible_host'] }}"  # IP address
 {% endfor %}
 {% endif %}
 
