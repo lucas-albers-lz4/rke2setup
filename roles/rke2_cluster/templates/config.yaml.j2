@@ -3,40 +3,36 @@ write-kubeconfig-mode: "{{ rke2_config.write_kubeconfig_mode }}"
 {% endif %}
 cni: cilium
 
-# Cluster member identification
+# Node identification
 node-name: {{ inventory_hostname }}
 
-# All cluster members must be listed in tls-san
+# TLS SAN entries for all cluster members
 tls-san:
-  # Standard entries
   - "127.0.0.1"
   - "kubernetes"
   - "kubernetes.default"
-  # Hostnames for all nodes
+  {# Control plane node hostnames #}
 {% for host in groups['control_plane_nodes'] %}
   - "{{ host }}"
   - "{{ hostvars[host]['ansible_host'] }}" 
 {% endfor %}
 {% if groups['worker_nodes'] is defined %}
+{# Worker node hostnames #}
 {% for host in groups['worker_nodes'] %}
   - "{{ host }}"
   - "{{ hostvars[host]['ansible_host'] }}"
 {% endfor %}
 {% endif %}
 
-# Cluster formation configuration
+# Cluster formation
 {% if inventory_hostname == groups['control_plane_nodes'][0] %}
-# First control plane node initializes the cluster
 cluster-init: true
 {% else %}
-# Other nodes join the first control plane
 server: https://{{ hostvars[groups['control_plane_nodes'][0]]['ansible_host'] }}:9345
 {% endif %}
 
-# Cluster join token
 token: {{ rke2_token }}
 
-# Node role labels and taints
 {% if inventory_hostname in groups['control_plane_nodes'] %}
 # Control plane configuration
 disable-kube-proxy: true
@@ -46,13 +42,14 @@ node-label:
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=control-plane"
 {% else %}
+# Worker node configuration
 node-label:
   - "node.kubernetes.io/instance-type=worker"
   - "kubernetes.io/hostname={{ inventory_hostname }}"
   - "workload.type=mixed"
 {% endif %}
 
-# Additional cluster configuration
+# Cluster settings
 cluster-domain: cluster.local
 additional-sans:
 {% for host in groups['control_plane_nodes'] %}
