@@ -1,0 +1,72 @@
+- name: Include airgap variables
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/airgap.yml"
+
+- name: Create local download directories
+  ansible.builtin.file:
+    path: "{{ version_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Check if images are already downloaded
+  ansible.builtin.stat:
+    path: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: image_check
+  loop: "{{ airgap.architectures | default(['amd64']) }}"
+  delegate_to: localhost
+  become: false
+
+- name: Download RKE2 images
+  ansible.builtin.get_url:
+    url: "{{ airgap.download.base_url }}/{{ rke2_version_clean }}/rke2-images.linux-{{ item }}.tar.zst"
+    dest: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+    mode: '0644'
+  loop: "{{ airgap.architectures }}"
+  delegate_to: localhost
+  become: false
+  when: not image_check.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | select('true') | list | length
+
+- name: Extract RKE2 version
+  ansible.builtin.set_fact:
+    rke2_version_clean: "{{ rke2_version.stdout | default(rke2_version) }}"
+
+- name: Set version directory path
+  ansible.builtin.set_fact:
+    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version_clean }}"
+
+- name: Include airgap verification
+  ansible.builtin.include_tasks: verify_airgap.yml
+  when: airgap_install | default(false) | bool
+
+- name: Map architecture to RKE2 format
+  ansible.builtin.set_fact:
+    rke2_arch: >-
+      {{
+        'amd64' if ansible_architecture == 'x86_64'
+        else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
+        else ansible_architecture
+      }}
+
+- name: Ensure airgap images directory exists on remote
+  ansible.builtin.file:
+    path: "{{ airgap.paths.images_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: Copy airgap images using standard copy
+  ansible.builtin.copy:
+    src: "{{ version_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    dest: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    mode: '0644'
+    owner: root
+    group: root
+  become: true

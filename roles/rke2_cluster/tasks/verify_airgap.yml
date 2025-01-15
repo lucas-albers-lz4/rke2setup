@@ -1,0 +1,31 @@
+---
+- name: Verify local download structure
+  block:
+    - name: Check download directory exists
+      ansible.builtin.stat:
+        path: "{{ version_dir }}"
+      register: download_dir
+      delegate_to: localhost
+      become: false
+
+    - name: Verify image files exist
+      ansible.builtin.stat:
+        path: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+      register: image_files
+      loop: "{{ airgap.architectures }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Test integrity of existing zst files
+      ansible.builtin.command:
+        cmd: zstd -t "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
+      loop: "{{ airgap.architectures }}"
+      register: integrity_check
+      failed_when: false
+      changed_when: false
+      delegate_to: localhost
+      become: false
+
+    - name: Set verification status
+      ansible.builtin.set_fact:
+        verification_passed: "{{ image_files.results | map(attribute='stat.exists') | select('true') | list | length == airgap.architectures | length }}" 
