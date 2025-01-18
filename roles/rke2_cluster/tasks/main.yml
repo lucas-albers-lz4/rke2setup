@@ -9,9 +9,10 @@
 
 - name: Wait for first control plane to be ready
   ansible.builtin.wait_for:
-    host: "{{ groups['control_plane_nodes'][0] }}"
+    host: 127.0.0.1
     port: 9345
     timeout: "{{ timeout_startup }}"
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
   when: inventory_hostname != groups['control_plane_nodes'][0]
 
 - name: Setup additional control plane nodes

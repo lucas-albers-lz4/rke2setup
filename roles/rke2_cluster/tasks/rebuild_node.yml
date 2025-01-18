@@ -396,7 +396,7 @@
   block:
     - name: Check kube-system pods readiness on node
       ansible.builtin.shell: |
-        {{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | grep -v "Running" || true
+        {{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | grep -v "Running" | true
       register: pod_status
       until: pod_status.stdout == ""
       retries: "{{ 60 if rebuilding_first_node else 30 }}"
