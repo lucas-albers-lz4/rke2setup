@@ -67,6 +67,7 @@ additional-sans:
 {% endif %}
 
 {% if inventory_hostname in groups['control_plane_nodes'] %}
-enabled:
-  - embedded-registry
+embedded-registry: true
+supervisor-metrics: true
+etcd-expose-metrics: true
 {% endif %}
