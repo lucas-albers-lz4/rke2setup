@@ -28,7 +28,8 @@ def generate_inventory_structure(control_plane_nodes, worker_nodes):
     # Add the new variables with defaults
     vars_dict.update({
         'ssh_public_key_path': '~/.ssh/id_ed25519.pub',
-        'rke2_version': 'v1.31.4+rke2r1'
+        'rke2_version': 'v1.31.4+rke2r1',
+        # rke2_release will only be included if explicitly set
     })
     
     inventory = {
@@ -74,11 +75,15 @@ def parse_hosts_file(hosts_file):
         'rke2_version': {
             'default': 'v1.31.4+rke2r1',
             'description': 'RKE2 version to install'
+        },
+        'rke2_release': {
+            'default': None,
+            'description': 'RKE2 release version for downloads (e.g., RC releases)'
         }
     }
     
     # Initialize vars_dict with defaults
-    vars_dict = {k: v['default'] for k, v in required_vars.items()}
+    vars_dict = {k: v['default'] for k, v in required_vars.items() if v['default'] is not None}
     vars_dict.update({
         'ansible_user': 'ubuntu',
         'ansible_python_interpreter': '/usr/bin/python3',

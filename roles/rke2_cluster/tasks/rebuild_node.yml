@@ -33,19 +33,16 @@
       - "{{ paths.system.bin }}"
     rebuilding_first_node: "{{ inventory_hostname == groups['control_plane_nodes'][0] }}"
 
-- name: Get RKE2 version from existing control plane node
-  ansible.builtin.shell: |
-    {{ kubectl.command }} get nodes --selector='node-role.kubernetes.io/control-plane' \
-      -o jsonpath='{.items[0].status.nodeInfo.kubeletVersion}'
-  register: rke2_version
-  delegate_to: "{{ delegation_target }}"
-  become: true
-  when: not rebuilding_first_node
+- name: Verify RKE2 version is defined
+  ansible.builtin.assert:
+    that: rke2_version is defined
+    fail_msg: "RKE2 version must be defined in inventory"
+    success_msg: "Using RKE2 version {{ rke2_version }}"
 
 - name: Check if RKE2 is already installed
   ansible.builtin.stat:
     path: /usr/local/bin/rke2
-  register: rke2_binary
+  register: rke2_binary_check
 
 - name: Calculate available root filesystem space
   ansible.builtin.set_fact:
@@ -55,7 +52,7 @@
   ansible.builtin.set_fact:
     required_space: >-
       {{
-        1500 if rke2_binary.stat.exists
+        1500 if rke2_binary_check.stat.exists
         else 3400
       }}
   vars:
@@ -67,10 +64,10 @@
   ansible.builtin.assert:
     that: "root_available_space | float >= required_space | float"
     fail_msg: >-
-      Insufficient disk space for RKE2 {{ 'rebuild' if rke2_binary.stat.exists else 'installation' }}.
-      Required: At least {{ required_space }}MB for {{ 'rebuild' if rke2_binary.stat.exists else 'new installation' }}
+      Insufficient disk space for RKE2 {{ 'rebuild' if rke2_binary_check.stat.exists else 'installation' }}.
+      Required: At least {{ required_space }}MB for {{ 'rebuild' if rke2_binary_check.stat.exists else 'new installation' }}
       Available space: {{ root_available_space }}MB
-    success_msg: "Sufficient disk space available for RKE2 {{ 'rebuild' if rke2_binary.stat.exists else 'installation' }}"
+    success_msg: "Sufficient disk space available for RKE2 {{ 'rebuild' if rke2_binary_check.stat.exists else 'installation' }}"
 
 - name: Include preflight checks
   ansible.builtin.include_tasks: preflight.yml
@@ -247,6 +244,8 @@
   ansible.builtin.shell: |
     /usr/local/bin/rke2-killall.sh
     sleep 5
+    /usr/local/bin/rke2-killall.sh
+    sleep 5
     /usr/local/bin/rke2-uninstall.sh
   when: 
     - script_check.results is defined
@@ -304,13 +303,11 @@
 
 - name: Install RKE2
   ansible.builtin.shell: |
-    curl -sfL https://get.rke2.io | \
-    INSTALL_RKE2_TYPE={{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }} \
-    {% if not rebuilding_first_node %}INSTALL_RKE2_VERSION="{{ rke2_version.stdout }}"{% endif %} \
-    sh -
+    mkdir -p /usr/local/bin
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION="{{ rke2_release }}" sh -
   args:
     creates: /usr/local/bin/rke2
-  become: true
+  register: rke2_install_result
 
 - name: Extract RKE2 version
   ansible.builtin.set_fact:
@@ -490,5 +487,14 @@
           Time: {{ ansible_date_time.iso8601 }}
           Details:
           {{ node_diagnostics.stdout }}
+
+- name: Copy airgap images after installation
+  ansible.builtin.copy:
+    src: "{{ version_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    dest: "/var/lib/rancher/rke2/agent/images/"
+    mode: "0644"
+    owner: root
+    group: root
+  when: rke2_install_result.changed | default(false)
 
 
