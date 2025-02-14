@@ -251,6 +251,8 @@
     - script_check.results is defined
     - script_check.results | selectattr('stat.exists') | list | length == 2
   become: true
+  failed_when : false 
+  #Occasionally it will throw an error when uninstalling which we just ignore, as if the script exists and we get it to execute it will clean everything up.
 
 - name: Ensure RKE2 directories exist after uninstall
   ansible.builtin.file:
@@ -303,10 +305,10 @@
 
 - name: Install RKE2
   ansible.builtin.shell: |
-    mkdir -p /usr/local/bin
-    curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION="{{ rke2_release }}" sh -
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION="{{ rke2_version_clean }}" sh -
   args:
     creates: /usr/local/bin/rke2
+  when: not ansible_check_mode
   register: rke2_install_result
 
 - name: Extract RKE2 version
