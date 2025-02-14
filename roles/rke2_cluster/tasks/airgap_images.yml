@@ -24,9 +24,9 @@
 
 - name: Download RKE2 images
   ansible.builtin.get_url:
-    url: "{{ airgap.download.base_url }}/{{ rke2_version_clean }}/rke2-images.linux-{{ item }}.tar.zst"
+    url: "{{ airgap.urls.base }}/rke2-images.linux-{{ item }}.tar.zst"
     dest: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
-    mode: '0644'
+    mode: "{{ airgap.file_modes.downloads }}"
   loop: "{{ airgap.architectures }}"
   delegate_to: localhost
   become: false

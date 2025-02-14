@@ -3,15 +3,27 @@
   ansible.builtin.file:
     path: "{{ version_dir }}"
     state: directory
-    mode: '0755'
+    mode: "{{ airgap.file_modes.directories }}"
   delegate_to: localhost
   become: false
 
-- name: Download RKE2 images
+- name: Set version for download
+  ansible.builtin.set_fact:
+    download_version: "{{ rke2_version }}"
+    encoded_version: "{{ rke2_version | replace('+rc', '-rc') | replace('+', '%2B') }}"
+
+- name: Debug version information
+  ansible.builtin.debug:
+    msg:
+      - "Version for download: {{ download_version }}"
+      - "Encoded version: {{ encoded_version }}"
+      - "Download URL template: https://github.com/rancher/rke2/releases/download/{{ encoded_version }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+
+- name: Download RKE2 image files
   ansible.builtin.get_url:
-    url: "{{ airgap.download.base_url }}/{{ rke2_version_clean }}/rke2-images.linux-{{ item }}.tar.zst"
+    url: "https://github.com/rancher/rke2/releases/download/{{ encoded_version }}/rke2-images.linux-{{ item }}.tar.zst"
     dest: "{{ version_dir }}/rke2-images.linux-{{ item }}.tar.zst"
-    mode: '0644'
+    mode: "{{ airgap.file_modes.downloads }}"
   loop: "{{ airgap.architectures }}"
   delegate_to: localhost
   become: false

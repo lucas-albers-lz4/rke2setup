@@ -9,7 +9,7 @@
 
 - name: Set version directory path
   ansible.builtin.set_fact:
-    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version_clean }}"
+    version_dir: "{{ airgap.paths.downloads }}/{{ rke2_version_clean }}"
 
 - name: Map architecture to RKE2 format
   ansible.builtin.set_fact:

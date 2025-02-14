@@ -65,14 +65,13 @@
   ansible.builtin.get_url:
     url: https://get.rke2.io
     dest: /tmp/rke2-install.sh
-    mode: "0700"
+    mode: '0755'
   become: true
 
 - name: Execute RKE2 server installation
   ansible.builtin.shell: |
-    INSTALL_RKE2_TYPE=server bash /tmp/rke2-install.sh
-  args:
-    creates: /usr/local/bin/rke2
+    INSTALL_RKE2_TYPE=server INSTALL_RKE2_VERSION='{{ rke2_version }}' bash /tmp/rke2-install.sh
+  changed_when: true
   become: true
 
 - name: Enable rke2-server
@@ -110,9 +109,22 @@
     group: root
   become: true
 
+# First, include the airgap variables
+- name: Include airgap variables
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/airgap.yml"
+
 - name: Set version directory path
   ansible.builtin.set_fact:
-    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version | default('v1.31.4+rke2r1') }}"
+    version_dir: "{{ airgap.paths.downloads }}/{{ rke2_version }}"
+
+- name: Include airgap verification
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/verify_airgap.yml"
+  when: airgap_install | default(false) | bool
+
+- name: Include airgap image tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/airgap_images.yml"
+  when: airgap_install | default(false) | bool
 
 - name: Map architecture to RKE2 format
   ansible.builtin.set_fact:
@@ -125,24 +137,21 @@
 
 - name: Ensure airgap images directory exists
   ansible.builtin.file:
-    path: "/var/lib/rancher/rke2/agent/images"
+    path: "{{ airgap.paths.images_dir }}"
     state: directory
-    mode: '0755'
+    mode: "0755"
     owner: root
     group: root
   become: true
-  when: airgap_install | default(false) | bool
 
 - name: Copy airgap images
   ansible.builtin.copy:
     src: "{{ version_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    dest: "/var/lib/rancher/rke2/agent/images/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    mode: '0644'
+    dest: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    mode: "0644"
     owner: root
     group: root
   become: true
-  when: airgap_install | default(false) | bool
-  register: copy_result
 
 - name: Set file permissions
   ansible.builtin.file:

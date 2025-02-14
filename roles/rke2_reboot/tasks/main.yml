@@ -5,6 +5,14 @@
   failed_when: false
   changed_when: false
 
+- name: stop services rke2-agent
+  ansible.builtin.shell: systemctl stop rke2-agent
+  failed_when: false
+
+- name: stop services rke2-server
+  ansible.builtin.shell: systemctl stop rke2-server
+  failed_when: false
+
 - name: Record uptime before reboot
   ansible.builtin.shell: cat /proc/uptime | awk '{print $1}'
   register: uptime_before

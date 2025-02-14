@@ -5,7 +5,6 @@ airgap:
     - arm64
   paths:
     downloads: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images"
-    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version }}"
     images_dir: "/var/lib/rancher/rke2/agent/images"
   urls:
     base: "https://github.com/rancher/rke2/releases/download/{{ rke2_version }}"
