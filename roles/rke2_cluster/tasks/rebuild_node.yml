@@ -324,8 +324,7 @@
   when: airgap_install | default(false) | bool
 
 - name: Include airgap image tasks
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/airgap_images.yml"
-  when: airgap_install | default(false) | bool
+  include_tasks: airgap_images.yml
 
 - name: Map architecture to RKE2 format
   ansible.builtin.set_fact:
