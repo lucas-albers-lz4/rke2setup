@@ -7,38 +7,46 @@
   vars_files:
     - roles/rke2_cluster/vars/main.yml
     - roles/rke2_cluster/vars/kubectl.yml
-    - credentials.yml
+    - inventory/credentials.yml
   vars:
     delegation_target: "{{ groups['control_plane_nodes'][0] }}"
-    registry_username: ""
-    registry_password: ""
 
   tasks:
+    - name: Verify registries.yml exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/inventory/registries.yml"
+      register: registries_file
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if registries.yml doesn't exist
+      ansible.builtin.fail:
+        msg: "registries.yml file not found at {{ playbook_dir }}/inventory/registries.yml"
+      when: not registries_file.stat.exists
+      delegate_to: localhost
+      become: false
+
+    - name: Validate registries.yml is valid YAML
+      ansible.builtin.command: "python3 -c 'import yaml; yaml.safe_load(open(\"{{ playbook_dir }}/inventory/registries.yml\"))'"
+      register: yaml_validation
+      failed_when: yaml_validation.rc != 0
+      changed_when: false
+      delegate_to: localhost
+      become: false
+
     - name: Configure RKE2 registries
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/inventory/registries.yml"
         dest: "/etc/rancher/rke2/registries.yaml"
-        content: |
-          mirrors:
-            "docker.io":
-              endpoints:
-                - "http://harbor.home.arpa/docker/"
-            "ghcr.io":
-              endpoints:
-                - "http://harbor.home.arpa/ghcr/"
-            "index.docker.io":
-              endpoints:
-                - "http://harbor.home.arpa/docker/"
-          configs:
-            "harbor.home.arpa":
-              tls:
-                insecure_skip_verify: true
-              auth:
-                username: "{{ registry_username }}"
-                password: "{{ registry_password }}"
         mode: '0644'
         owner: root
         group: root
       register: rke2_config
+
+    - name: Debug registry configuration
+      ansible.builtin.debug:
+        msg: "Registry configuration complete with credentials for user {{ registry_username }}"
+      changed_when: false
 
     - name: Drain node before restarting services
       ansible.builtin.include_role:
@@ -87,5 +95,3 @@
         - rke2_config.changed
         - inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
       changed_when: false
-
-        
