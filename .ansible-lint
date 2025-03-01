@@ -3,6 +3,8 @@ exclude_paths:
   # Virtual environments (absolute paths)
   - ".venv/"
   - "venv/"
+  - "venv/*"
+  - "venv/**/*"
   - ".env/"
   - "env/"
   
