@@ -14,6 +14,9 @@ OUTPUT_DIR := generated_configs
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
+lint:  ## Clean generated files
+	ansible-lint
+
 test:  ## Run all tests
 	$(PYTEST) tests/ -v -s
 
