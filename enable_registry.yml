@@ -7,7 +7,6 @@
   vars_files:
     - roles/rke2_cluster/vars/main.yml
     - roles/rke2_cluster/vars/kubectl.yml
-    - registries.yml
     - credentials.yml
   vars:
     delegation_target: "{{ groups['control_plane_nodes'][0] }}"
@@ -22,13 +21,13 @@
           mirrors:
             "docker.io":
               endpoints:
-                - "{{ mirrors['docker.io'].endpoints[0] }}"
+                - "http://harbor.home.arpa/docker/"
             "ghcr.io":
               endpoints:
-                - "{{ mirrors['ghcr.io'].endpoints[0] }}"
+                - "http://harbor.home.arpa/ghcr/"
             "index.docker.io":
               endpoints:
-                - "{{ mirrors['index.docker.io'].endpoints[0] }}"
+                - "http://harbor.home.arpa/docker/"
           configs:
             "harbor.home.arpa":
               tls:
