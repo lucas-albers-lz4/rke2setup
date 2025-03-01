@@ -1,0 +1,58 @@
+---
+- hosts: control_plane_nodes:worker_nodes
+  become: true
+  serial: 1
+  vars_files:
+    - roles/rke2_cluster/vars/main.yml
+    - roles/rke2_cluster/vars/kubectl.yml
+  vars:
+    delegation_target: "{{ groups['control_plane_nodes'][0] }}"
+  roles:
+    - rke2-update 
+  tasks:
+    - name: Drain node before restarting services
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: drain_node
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+    - name: restart RKE2 service 
+      ansible.builtin.systemd:
+        name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
+        state: restarted
+        enabled: true
+      become: true
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Check kube-system pods readiness on node
+      ansible.builtin.shell: |
+        {{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | grep -v "Running" | true
+      register: pod_status
+      until: pod_status.stdout == ""
+      retries: "{{ 60 if rebuilding_first_node else 30 }}"
+      delay: "{{ 20 if rebuilding_first_node else 10 }}"
+      delegate_to: "{{ delegation_target }}"
+      changed_when: false
+
+    - name: Display error details on failure
+      ansible.builtin.fail:
+        msg: "Not all kube-system pods are running on node {{ inventory_hostname }}"
+      when: pod_status.stdout != ""
+
+    - name: Display node status
+      ansible.builtin.debug:
+        msg: "All kube-system pods are running on node {{ inventory_hostname }}"
+      when: rebuilding_first_node
+
+    - name: Wait additional time for first control plane stabilization
+      when: rebuilding_first_node
+      ansible.builtin.pause:
+        seconds: 120
+
+    - name: Show node status
+      ansible.builtin.shell: |
+        {{ kubectl.command }} get nodes {{ inventory_hostname | lower }} -o wide
+      register: node_status
+      changed_when: false
+      delegate_to: "{{ delegation_target }}"
+      become: true
+      when: node_exists.rc == 0
