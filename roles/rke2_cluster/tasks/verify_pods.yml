@@ -80,7 +80,8 @@
           fi
         done
 
-        if [ ${#missing_pods[@]} -ne 0 ]; then
+        MISSING_COUNT=$(echo "${missing_pods[@]}" | wc -w)
+        if [ "$MISSING_COUNT" -ne 0 ]; then
           echo "Waiting for pods: ${missing_pods[*]}"
           exit 1
         fi
