@@ -1,0 +1,44 @@
+---
+- name: restart rke2-server
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups['control_plane_nodes']
+  register: restart_result
+  until: restart_result is success
+  retries: 30
+  delay: 10
+
+- name: restart rke2-agent
+  ansible.builtin.systemd:
+    name: rke2-agent
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups['worker_nodes']
+  register: agent_restart
+  until: agent_restart is success
+  retries: 30
+  delay: 10
+
+- name: Wait for node ready
+  ansible.builtin.command:
+    cmd: "{{ kubectl.command }} get nodes {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
+  environment:
+    KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+  delegate_to: "{{ delegation_target }}"
+  register: node_status
+  retries: 30
+  delay: 10
+  until: node_status.stdout == 'True'
+  changed_when: false
+
+- name: Check API server health
+  ansible.builtin.shell: |
+    {{ kubectl.command }} get --raw /healthz
+  environment:
+    KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+  delegate_to: "{{ delegation_target }}"
+  register: apiserver_health
+  changed_when: false
+  become: true

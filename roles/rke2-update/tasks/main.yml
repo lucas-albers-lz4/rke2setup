@@ -1,0 +1,24 @@
+---
+- name: Include RKE2 cluster vars
+  include_vars:
+    file: "{{ playbook_dir }}/roles/rke2_cluster/vars/main.yml"
+
+- name: Get existing token from control plane
+  ansible.builtin.slurp:
+    src: /etc/rancher/rke2/config.yaml
+  register: existing_config
+  delegate_to: "{{ groups['control_plane_nodes'][0] }}"
+  become: true
+
+- name: Set token fact
+  ansible.builtin.set_fact:
+    rke2_token: "{{ (existing_config.content | b64decode | from_yaml).token }}"
+
+- name: Configure node
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/roles/rke2_cluster/templates/config.yaml.j2"
+    dest: "{{ paths.rke2.config }}/config.yaml"
+    mode: "0644"
+  notify:
+    - restart rke2-server
+    - restart rke2-agent 
