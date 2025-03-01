@@ -1,6 +1,6 @@
 ---
 - name: Rebuild RKE2 Control Plane Nodes
-  hosts: "{{ target_host | default(groups['control_plane_nodes']) }}"
+  hosts: "{{ target_host | default(groups['control_plane_nodes'] | default([])) }}"
   become: true
   gather_facts: true
   serial: 1
@@ -13,10 +13,10 @@
       ansible.builtin.include_role:
         name: rke2_cluster
         tasks_from: rebuild_node.yml
-      when: inventory_hostname in groups['control_plane_nodes']
+      when: inventory_hostname in groups['control_plane_nodes'] | default([])
 
 - name: Rebuild RKE2 Worker Nodes
-  hosts: "{{ target_host | default(groups['worker_nodes']) }}"
+  hosts: "{{ target_host | default(groups['worker_nodes'] | default([])) }}"
   become: true
   gather_facts: true
   serial: "50%"
@@ -29,4 +29,4 @@
       ansible.builtin.include_role:
         name: rke2_cluster
         tasks_from: rebuild_node.yml
-      when: inventory_hostname not in groups['control_plane_nodes']
+      when: inventory_hostname not in groups['control_plane_nodes'] | default([])
