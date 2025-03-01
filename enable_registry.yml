@@ -1,0 +1,92 @@
+---
+- name: RKE2 Enable Registry
+  hosts: all
+  become: true
+  gather_facts: true
+  strategy: linear
+  vars_files:
+    - roles/rke2_cluster/vars/main.yml
+    - roles/rke2_cluster/vars/kubectl.yml
+    - registries.yml
+    - credentials.yml
+  vars:
+    delegation_target: "{{ groups['control_plane_nodes'][0] }}"
+    registry_username: ""
+    registry_password: ""
+
+  tasks:
+    - name: Configure RKE2 registries
+      ansible.builtin.copy:
+        dest: "/etc/rancher/rke2/registries.yaml"
+        content: |
+          mirrors:
+            "docker.io":
+              endpoints:
+                - "{{ mirrors['docker.io'].endpoints[0] }}"
+            "ghcr.io":
+              endpoints:
+                - "{{ mirrors['ghcr.io'].endpoints[0] }}"
+            "index.docker.io":
+              endpoints:
+                - "{{ mirrors['index.docker.io'].endpoints[0] }}"
+          configs:
+            "harbor.home.arpa":
+              tls:
+                insecure_skip_verify: true
+              auth:
+                username: "{{ registry_username }}"
+                password: "{{ registry_password }}"
+        mode: '0644'
+        owner: root
+        group: root
+      register: rke2_config
+
+    - name: Drain node before restarting services
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: drain_node
+      when: 
+        - rke2_config.changed
+        - inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Restart RKE2 service
+      ansible.builtin.systemd:
+        name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
+        state: restarted
+        daemon_reload: true
+      async: 600  # Increased from 90 to 300 seconds (10 minutes)
+      poll: 30    # Increased poll interval slightly
+      register: restart_async_result
+      when: 
+        - rke2_config.changed
+        - inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Wait for RKE2 service to be fully operational
+      ansible.builtin.systemd:
+        name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
+        state: started
+      register: service_status
+      until: service_status.status.ActiveState == "active"
+      retries: 10
+      delay: 15
+      when:
+        - rke2_config.changed
+        - inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Wait for node to be ready in Kubernetes
+      ansible.builtin.shell: |
+        {{ kubectl.command }} get nodes {{ inventory_hostname | lower }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: node_ready
+      until: node_ready.stdout == "True"
+      retries: 10
+      delay: 15
+      delegate_to: "{{ delegation_target }}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ kubectl.config }}"
+      when:
+        - rke2_config.changed
+        - inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+      changed_when: false
+
+        
