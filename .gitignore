@@ -91,3 +91,4 @@ terraform.rc
 # Ignore any local configuration or secret files
 *secret*
 *private*
+inventory/credentials.yml
