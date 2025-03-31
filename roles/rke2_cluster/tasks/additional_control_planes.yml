@@ -125,6 +125,14 @@
       changed_when: false
       become: true
 
+    - name: Uncordon Node when it is ready
+      ansible.builtin.shell: |
+        {{ paths.rke2.bin }}/kubectl uncordon {{ inventory_hostname }}
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
+      register: node_uncordoned
+      become: true
+
 - name: Verify RKE2 server installation
   ansible.builtin.stat:
     path: "{{ item }}"
