@@ -1,0 +1,89 @@
+---
+- name: Drain and reboot nodes
+  hosts: six_node_cluster
+  become: true
+  gather_facts: false
+  strategy: linear
+  vars: &drain_vars
+    kubectl:
+      command: "/usr/local/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml"
+      config: "/etc/rancher/rke2/rke2.yaml"
+    delegation_target: >-
+      {{
+        groups['control_plane_nodes'][1] if
+        (inventory_hostname == groups['control_plane_nodes'][0] and groups['control_plane_nodes'] | length > 1)
+        else groups['control_plane_nodes'][0]
+      }}
+  tasks:
+    - name: Drain node before reboot
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: drain_node
+      vars:
+        <<: *drain_vars
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Reboot node
+      ansible.builtin.include_role:
+        name: rke2_reboot
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Uncordon node after reboot
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: uncordon_node
+      vars:
+        <<: *drain_vars
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+- name: Drain and restart RKE2 services (no reboot)
+  hosts: six_node_cluster
+  become: true
+  gather_facts: false
+  strategy: linear
+  vars:
+    <<: *drain_vars
+  tasks:
+    - name: Drain node before restarting services
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: drain_node
+      vars:
+        <<: *drain_vars
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Restart rke2-server on control plane nodes
+      ansible.builtin.service:
+        name: rke2-server
+        state: restarted
+      when: inventory_hostname in groups['control_plane_nodes']
+
+    - name: Restart rke2-agent on worker nodes
+      ansible.builtin.service:
+        name: rke2-agent
+        state: restarted
+      when: inventory_hostname in groups['worker_nodes']
+
+    - name: Wait for node to be Ready after restart
+      ansible.builtin.shell: |
+        {{ kubectl.command }} get node {{ inventory_hostname | lower }} \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      args:
+        executable: /bin/bash
+      register: node_readiness
+      until: node_readiness.stdout == 'True'
+      retries: "{{ wait_config.retries | default(30) }}"
+      delay: "{{ wait_config.delay | default(10) }}"
+      changed_when: false
+      delegate_to: "{{ delegation_target }}"
+      environment:
+        KUBECONFIG: "{{ kubectl.config }}"
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
+
+    - name: Uncordon node after service restart
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: uncordon_node
+      vars:
+        <<: *drain_vars
+      when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']

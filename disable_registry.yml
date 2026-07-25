@@ -1,0 +1,29 @@
+---
+- name: RKE2 Disable CNI
+  hosts: all
+  become: true
+  gather_facts: true
+  strategy: linear
+
+  tasks:
+    - name: Configure RKE2 registries
+      ansible.builtin.copy:
+        dest: "/etc/rancher/rke2/registries.yaml"
+        content: |
+          mirrors:
+            "*":
+        mode: '0644'
+        owner: root
+        group: root
+      register: rke2_config
+
+    - name: Restart RKE2 service
+      ansible.builtin.systemd:
+        name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
+        state: restarted
+        daemon_reload: true
+      async: 90
+      poll: 10 
+      when: rke2_config.changed
+
+        

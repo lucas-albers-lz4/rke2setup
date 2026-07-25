@@ -1,0 +1,11 @@
+---
+- name: Uncordon node
+  ansible.builtin.shell: "{{ kubectl.command }} uncordon {{ inventory_hostname | lower }}"
+  args:
+    executable: /bin/bash
+  register: uncordon_result
+  delegate_to: "{{ delegation_target }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ kubectl.config }}"
+  changed_when: uncordon_result.rc == 0
