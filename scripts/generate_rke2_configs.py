@@ -11,11 +11,11 @@ def generate_base_vars(inventory_data):
         'ansible_python_interpreter': inventory_data.get('vars', {}).get('ansible_python_interpreter', '/usr/bin/python3')
     }
     
-    # Default RKE2 configuration
+    # Default RKE2 configuration — use tls_san in Ansible vars
     default_rke2_config = {
         'write_kubeconfig_mode': '0644',
         'token': '',
-        'tls-san': ['127.0.0.1', 'localhost']
+        'tls_san': ['127.0.0.1', 'localhost']
     }
     
     # Default paths
@@ -38,14 +38,17 @@ def generate_base_vars(inventory_data):
     # Get RKE2 configuration from inventory or use defaults
     rke2_config = inventory_data.get('rke2_config', default_rke2_config)
     
+    # Support both tls_san and legacy tls-san keys
+    tls_san = rke2_config.get('tls_san', rke2_config.get('tls-san', default_rke2_config['tls_san']))
+    
     # Merge configurations
     base_vars.update({
-        'tls_san': rke2_config.get('tls-san', default_rke2_config['tls-san']),
+        'tls_san': tls_san,
         'rke2_token': rke2_config.get('token', default_rke2_config['token']),
         'rke2_config': {
             'write_kubeconfig_mode': rke2_config.get('write_kubeconfig_mode', default_rke2_config['write_kubeconfig_mode']),
             'token': rke2_config.get('token', default_rke2_config['token']),
-            'tls-san': rke2_config.get('tls-san', default_rke2_config['tls-san'])
+            'tls_san': tls_san
         },
         'paths': inventory_data.get('paths', default_paths),
         'commands': inventory_data.get('commands', default_commands)

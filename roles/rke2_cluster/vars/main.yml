@@ -1,7 +1,4 @@
 ---
-# Include kubectl configuration
-include_vars: kubectl.yml
-
 # RKE2 paths
 paths:
   rke2:

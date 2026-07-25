@@ -1,7 +1,7 @@
 {% if rke2_config.write_kubeconfig_mode is defined %}
 write-kubeconfig-mode: "{{ rke2_config.write_kubeconfig_mode }}"
 {% endif %}
-cni: cilium
+cni: {{ rke2_cni | default('cilium') }}
 
 # Cluster member identification
 node-name: {{ inventory_hostname }}
@@ -34,7 +34,7 @@ server: https://{{ hostvars[groups['control_plane_nodes'][0]]['ansible_host'] }}
 {% endif %}
 
 # Cluster join token
-token: {{ rke2_token }}
+token: "{{ rke2_token }}"
 
 # Node role labels and taints
 {% if inventory_hostname in groups['control_plane_nodes'] %}

@@ -1,29 +1,6 @@
 ---
 # RKE2 Cluster Default Variables
 #rke2_version: "v1.31.4+rke2r1"  # Update this to match your desired version
-# Cluster Configuration
-cluster_type: "six_node"
-first_server_ip: ""
-
-# Installation Paths
-rke2_paths:
-  # Pre-installation paths (always exist)
-  system:
-    bin: "/usr/local/bin"
-    systemd: "/etc/systemd/system"
-
-  # Paths that should exist after package install
-  config:
-    base: "/etc/rancher/rke2"
-    config_yaml: "/etc/rancher/rke2/config.yaml"
-
-  # Paths that exist after service start
-  runtime:
-    base: "/var/lib/rancher/rke2"
-    bin: "/var/lib/rancher/rke2/bin"
-    server: "/var/lib/rancher/rke2/server"
-    kubeconfig: "/var/lib/rancher/rke2/server/cred/admin.kubeconfig"
-    node_token: "/var/lib/rancher/rke2/server/node-token"
 
 # Wait Configuration
 wait_config:
@@ -45,9 +22,10 @@ commands:
   rke2: /usr/local/bin/rke2
   kubectl: /usr/local/bin/kubectl
 
-# Network Configuration
+# Network Configuration — single source of truth for CNI
+rke2_cni: cilium
 network:
-  plugin: cilium
+  plugin: "{{ rke2_cni }}"
   cni_version: v1.14.0
 
 # Additional Add-ons
@@ -79,29 +57,30 @@ experimental:
 # Default configurations
 default_config:
   token: rke2-cluster-token
-  cni: canal
+  cni: "{{ rke2_cni }}"
   disable:
     - rke2-ingress-nginx
   node-taint: []
+
 # Feature flags
 enable_monitoring: true
 enable_ingress: true
 
-# Add these timeout and retry settings
+# Timeout and retry settings
 rke2_wait_settings:
   timeout: 300
   retries: 30
   delay: 10
   connect_timeout: 5
 
-# Add these port definitions
+# Port definitions
 rke2_ports:
   supervisor: 9345
   api: 6443
   etcd_client: 2379
   etcd_peer: 2380
 
-# Add these state definitions
+# State definitions
 rke2_states:
   STARTING:
     pattern: "Starting rke2-server"
@@ -113,18 +92,6 @@ rke2_states:
     pattern: "Running kube-apiserver"
     completed: false
 
-# Add these monitoring settings
-rke2_monitor_timeout: 600 # 10 minutes
-rke2_monitor_interval: 10 # 10 seconds
-
-# Base system paths that don't change
-base_paths:
-  rke2:
-    config: /etc/rancher/rke2
-    data: /var/lib/rancher/rke2
-    bin: /var/lib/rancher/rke2/bin
-    kubeconfig: /etc/rancher/rke2/rke2.yaml
-
 # Default file permissions
 file_modes:
   directory:
@@ -135,16 +102,19 @@ file_modes:
     secure: "0600"
 
 # Default RKE2 configuration if not specified in group_vars
+# Use tls_san (underscore) in Ansible vars; template renders as tls-san:
 rke2_config:
   write_kubeconfig_mode: "0644"
   token: "" # Will be generated if not provided
-  tls-san:
+  tls_san:
     - "127.0.0.1"
     - "localhost"
     - "kubernetes"
     - "kubernetes.default"
     - "kubernetes.default.svc"
     - "kubernetes.default.svc.cluster.local"
+
+kubeconfig_dest: "{{ lookup('env', 'HOME') }}/.kube/config-rke2"
 
 # Timeout configurations
 retry_delay: 10
@@ -160,6 +130,5 @@ timeout_reboot: 600
 timeout_connection: 30
 timeout_api_check: 180
 
-# Airgap installation
-airgap_install: true 
-
+# Airgap installation — opt-in; online installs are the default
+airgap_install: false

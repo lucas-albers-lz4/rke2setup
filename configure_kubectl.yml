@@ -3,6 +3,9 @@
   hosts: control_plane_nodes
   gather_facts: true
   become: true
+  vars_files:
+    - roles/rke2_cluster/vars/main.yml
+    - roles/rke2_cluster/vars/kubectl.yml
 
   tasks:
     - name: Ensure kubectl directories exist

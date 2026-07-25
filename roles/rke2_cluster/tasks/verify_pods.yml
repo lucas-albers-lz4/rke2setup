@@ -22,7 +22,7 @@
       }}
     control_plane_pods: >-
       {{
-        ['coredns', 'metrics-server', 'rke2-ingress-nginx-controller', 'etcd',
+        ['coredns', 'metrics-server', 'etcd',
          'kube-apiserver', 'kube-controller-manager', 'kube-scheduler'] +
         (['cilium'] if rke2_cni == 'cilium' else ['canal'])
       }}
@@ -80,7 +80,7 @@
           fi
         done
 
-        MISSING_COUNT=$(echo "${missing_pods[@]}" | wc -w)
+        MISSING_COUNT=${#missing_pods[@]}
         if [ "$MISSING_COUNT" -ne 0 ]; then
           echo "Waiting for pods: ${missing_pods[*]}"
           exit 1

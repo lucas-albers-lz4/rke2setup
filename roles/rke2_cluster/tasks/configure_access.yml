@@ -1,30 +1,37 @@
 ---
 - name: Check if kubeconfig exists locally
-  stat:
+  ansible.builtin.stat:
     path: "{{ kubeconfig_dest }}"
   delegate_to: localhost
   register: kubeconfig_file
   when: kubeconfig_dest is defined
 
 - name: Wait for kubeconfig
-  wait_for:
+  ansible.builtin.wait_for:
     path: /etc/rancher/rke2/rke2.yaml
     state: present
     timeout: 600
 
 - name: Copy kubeconfig
+  when: kubeconfig_dest is defined
   block:
     - name: Ensure kubeconfig directory exists
-      file:
+      ansible.builtin.file:
         path: "{{ kubeconfig_dest | dirname }}"
         state: directory
         mode: '0755'
       delegate_to: localhost
-      when: kubeconfig_dest is defined
-      
+
     - name: Copy kubeconfig file
-      fetch:
+      ansible.builtin.fetch:
         src: /etc/rancher/rke2/rke2.yaml
         dest: "{{ kubeconfig_dest }}"
-        flat: yes
-      when: kubeconfig_dest is defined and (not kubeconfig_file.stat.exists or force_kubeconfig_copy | default(false) | bool)
+        flat: true
+      when: not kubeconfig_file.stat.exists or force_kubeconfig_copy | default(false) | bool
+
+- name: Warn when kubeconfig_dest is undefined
+  ansible.builtin.debug:
+    msg: >-
+      kubeconfig_dest is not defined; skipping local kubeconfig copy.
+      Set kubeconfig_dest (e.g. ~/.kube/config-rke2) to enable this step.
+  when: kubeconfig_dest is not defined

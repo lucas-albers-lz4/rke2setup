@@ -54,7 +54,7 @@
           done
 
           # Output results
-          ISSUE_COUNT=$(echo "${ISSUES[@]}" | wc -w)
+          ISSUE_COUNT=${#ISSUES[@]}
           if [ "$ISSUE_COUNT" -eq 0 ]; then
             echo "No common issues detected"
           else

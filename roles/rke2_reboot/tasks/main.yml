@@ -1,9 +1,14 @@
 ---
-- name: Check for pending package updates
-  ansible.builtin.command: needs-restarting -r
-  register: updates_pending
-  failed_when: false
+- name: Check if reboot is required (Ubuntu/Debian)
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required_file
   changed_when: false
+
+- name: Set reboot-needed fact
+  ansible.builtin.set_fact:
+    updates_pending:
+      rc: "{{ 100 if reboot_required_file.stat.exists else 0 }}"
 
 - name: stop services rke2-agent
   ansible.builtin.shell: systemctl stop rke2-agent
@@ -63,7 +68,7 @@
           Uptime after: {{ uptime_after.stdout }}
           Reboot verified: {{ uptime_after.stdout | float < uptime_before.stdout | float }}
           System status: {{ system_status.stdout }}
-          Updates pending: {{ updates_pending.rc == 100 }}
+          Reboot was required: {{ reboot_required_file.stat.exists }}
           Services status: {{ service_status }}
 
   rescue:

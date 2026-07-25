@@ -28,7 +28,7 @@
         msg:
           - "First control plane: {{ groups['control_plane_nodes'][0] }}"
           - "Token from CP: {{ hostvars[groups['control_plane_nodes'][0]].rke2_token | default('UNDEFINED') }}"
-      when: not hostvars[groups['control_plane_nodes'][0]].rke2_token is defined
+      when: hostvars[groups['control_plane_nodes'][0]].rke2_token is not defined
 
 - name: Download RKE2 installation script
   ansible.builtin.get_url:
@@ -39,5 +39,5 @@
 
 - name: Install RKE2 agent
   ansible.builtin.shell: |
-    INSTALL_RKE2_TYPE=agent bash /tmp/rke2-install.sh
+    INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION='{{ rke2_version }}' bash /tmp/rke2-install.sh
   when: download_result is success

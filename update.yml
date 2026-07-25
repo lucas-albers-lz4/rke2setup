@@ -13,7 +13,7 @@
         cache_valid_time: 3600
         force_apt_get: yes
       register: apt_update_status
-      retries: 3
+      retries: 1 
       delay: 10
       until: apt_update_status is success
       become: true

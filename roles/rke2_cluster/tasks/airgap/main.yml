@@ -5,7 +5,7 @@
 
 - name: Extract RKE2 version
   ansible.builtin.set_fact:
-    rke2_version_clean: "{{ rke2_version.stdout | default(rke2_version) }}"
+    rke2_version_clean: "{{ rke2_version }}"
 
 - name: Set version directory path
   ansible.builtin.set_fact:

@@ -4,7 +4,7 @@
     name: rke2-server
     state: restarted
     daemon_reload: true
-  when: inventory_hostname in groups['three_node_control_plane']
+  when: inventory_hostname in groups['control_plane_nodes']
   register: restart_result
   until: restart_result is success
   retries: "{{ retry_standard }}"
@@ -15,7 +15,7 @@
     name: rke2-agent
     state: restarted
     daemon_reload: true
-  when: inventory_hostname in groups['three_node_worker']
+  when: inventory_hostname in groups['worker_nodes']
   register: agent_restart
   until: agent_restart is success
   retries: "{{ retry_standard }}"

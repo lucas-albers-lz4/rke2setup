@@ -15,7 +15,7 @@
 
 - name: Set memory requirement based on node type
   ansible.builtin.set_fact:
-    required_memory_mb: "{{ 3800 if inventory_hostname in groups['control_plane_nodes'] else 1800 | int }}"
+    required_memory_mb: "{{ (3800 if inventory_hostname in groups['control_plane_nodes'] else 1800) | int }}"
 
 - name: Verify minimum requirements
   ansible.builtin.assert:
@@ -38,33 +38,39 @@
       - (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available / 1024 / 1024 / 1024 >= 1
     fail_msg: "At least 1GB of free disk space is required"
 
-- name: Ensure UFW is disabled
+- name: Ensure UFW allows required RKE2 ports
   become: true
   block:
-    - name: Stop UFW service
-      ansible.builtin.systemd:
-        name: ufw
-        state: stopped
-        enabled: false
-      register: ufw_stop
-      failed_when: false
-
-    - name: Disable UFW
-      ansible.builtin.command: ufw disable
-      register: ufw_disable
-      changed_when: "'Firewall stopped and disabled on system startup' in ufw_disable.stdout"
-      failed_when: false
-
-    - name: Verify UFW is disabled
-      ansible.builtin.command: ufw status
-      register: ufw_status
-      failed_when: "'Status: active' in ufw_status.stdout"
+    - name: Check if UFW is installed
+      ansible.builtin.command: which ufw
+      register: ufw_check
       changed_when: false
+      failed_when: false
+
+    - name: Allow RKE2 ports through UFW
+      ansible.builtin.command: "ufw allow {{ item }}"
+      loop:
+        - "6443/tcp"
+        - "9345/tcp"
+        - "2379:2380/tcp"
+        - "10250/tcp"
+        - "8472/udp"
+      when: ufw_check.rc == 0
+      register: ufw_allow
+      changed_when: "'Rule added' in ufw_allow.stdout or 'Rule updated' in ufw_allow.stdout"
+      failed_when: false
+
+    - name: Ensure UFW is enabled with default deny
+      ansible.builtin.shell: |
+        ufw --force enable
+      when: ufw_check.rc == 0
+      changed_when: false
+      failed_when: false
 
 - name: Verify RKE2 version is defined
   ansible.builtin.assert:
     that:
-      - (rke2_version.stdout | default(rke2_version)) is match("^v[0-9]+\\.[0-9]+\\.[0-9]+\\+rke2r[0-9]+$")
+      - rke2_version is match("^v[0-9]+\\.[0-9]+\\.[0-9]+\\+rke2r[0-9]+$")
     msg: >-
       RKE2 version must be defined in inventory/rke2.yml vars section in the format 'vX.Y.Z+rke2rN'.
-      Current value: {{ rke2_version.stdout | default(rke2_version) }}
+      Current value: {{ rke2_version }}

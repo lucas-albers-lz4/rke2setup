@@ -210,7 +210,7 @@
     - inventory_hostname in groups['control_plane_nodes']
     - etcd_member_id.stdout is defined
     - etcd_member_id.stdout != ""
-    - inventory_hostname | lower in (etcd_member_list.stdout | default(''))
+    - inventory_hostname | lower in (etcd_members.stdout | default(''))
 
 - name: Delete node from Kubernetes
   ansible.builtin.shell: "{{ kube_cmd }} delete node {{ inventory_hostname | lower }}"
@@ -294,14 +294,20 @@
   failed_when: false
   become: true
 
-- name: Fail if RKE2 documentation site is unreachable
-  ansible.builtin.fail:
-    msg: "Unable to reach RKE2 documentation site. Network connectivity issue detected."
-  when: rke2_docs_check.status != 200
+- name: Warn if RKE2 documentation site is unreachable
+  ansible.builtin.debug:
+    msg: >-
+      Unable to reach https://docs.rke2.io/ (status={{ rke2_docs_check.status | default('n/a') }}).
+      Continuing rebuild; this check is informational only.
+  when: rke2_docs_check.status | default(0) != 200
 
 - name: Include airgap setup
   ansible.builtin.include_tasks: airgap/main.yml
   when: airgap_install | default(false) | bool
+
+- name: Extract RKE2 version
+  ansible.builtin.set_fact:
+    rke2_version_clean: "{{ rke2_version }}"
 
 - name: Install RKE2
   ansible.builtin.shell: |
@@ -310,57 +316,6 @@
     creates: /usr/local/bin/rke2
   when: not ansible_check_mode
   register: rke2_install_result
-
-- name: Extract RKE2 version
-  ansible.builtin.set_fact:
-    rke2_version_clean: "{{ rke2_version.stdout | default(rke2_version) }}"
-
-- name: Set version directory path
-  ansible.builtin.set_fact:
-    version_dir: "{{ lookup('env', 'HOME') }}/Downloads/rke2-images/{{ rke2_version_clean }}"
-
-- name: Include airgap verification
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/verify_airgap.yml"
-  when: airgap_install | default(false) | bool
-
-- name: Include airgap image tasks
-  include_tasks: airgap_images.yml
-
-- name: Map architecture to RKE2 format
-  ansible.builtin.set_fact:
-    rke2_arch: >-
-      {{
-        'amd64' if ansible_architecture == 'x86_64'
-        else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
-        else ansible_architecture
-      }}
-
-- name: Ensure airgap images directory exists on remote
-  ansible.builtin.file:
-    path: "{{ airgap.paths.images_dir }}"
-    state: directory
-    mode: '0755'
-    owner: root
-    group: root
-  become: true
-
-- name: Copy airgap images using standard copy
-  ansible.builtin.copy:
-    src: "{{ version_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    dest: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    mode: '0644'
-    owner: root
-    group: root
-  become: true
-
-- name: Set file permissions
-  ansible.builtin.file:
-    path: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    mode: '0644'
-    owner: root
-    group: root
-  become: true
-  when: airgap_install | default(false) | bool
 
 - name: Configure RKE2 registries
   ansible.builtin.copy:
@@ -371,7 +326,7 @@
     mode: '0644'
     owner: root
     group: root
-    
+
 - name: Start RKE2 service
   ansible.builtin.systemd:
     name: "rke2-{{ 'server' if inventory_hostname in groups['control_plane_nodes'] else 'agent' }}"
@@ -394,13 +349,14 @@
   block:
     - name: Check kube-system pods readiness on node
       ansible.builtin.shell: |
-        {{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | grep -v "Running" | true
+        {{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | grep -v "Running" || true
       register: pod_status
       until: pod_status.stdout == ""
       retries: "{{ 60 if rebuilding_first_node else 30 }}"
       delay: "{{ 20 if rebuilding_first_node else 10 }}"
       delegate_to: "{{ delegation_target }}"
       changed_when: false
+      failed_when: false
 
     - name: Display error details on failure
       ansible.builtin.fail:

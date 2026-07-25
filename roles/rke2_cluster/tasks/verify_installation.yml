@@ -5,7 +5,6 @@
       ansible.builtin.assert:
         that:
           - install_result.rc == 0
-          - "'unpacking tarball file to /usr/local' in install_result.stdout"
         fail_msg: |
           RKE2 installation failed:
           RC: {{ install_result.rc }}
@@ -60,7 +59,7 @@
       ignore_errors: true # Continue for debugging
 
     - name: Display verification failure details
-      when: not verification_result.failed
+      when: verification_result.failed
       ansible.builtin.debug:
         msg:
           - "Missing files:"

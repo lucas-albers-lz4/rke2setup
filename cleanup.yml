@@ -4,6 +4,8 @@
   become: true
   gather_facts: false
   strategy: linear
+  vars_files:
+    - roles/rke2_cluster/vars/main.yml
 
   tasks:
     - name: Warning - RKE2 will be removed
@@ -12,21 +14,18 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Stop RKE2 services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: stopped
-        enabled: false
-      loop:
-        - rke2-server
-        - rke2-agent
-      failed_when: false
+    - name: Include role cleanup tasks
+      ansible.builtin.include_role:
+        name: rke2_cluster
+        tasks_from: cleanup
 
     - name: Remove systemd service files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
+        - /usr/local/lib/systemd/system/rke2-server.service
+        - /usr/local/lib/systemd/system/rke2-agent.service
         - /etc/systemd/system/rke2-server.service
         - /etc/systemd/system/rke2-agent.service
         - /etc/systemd/system/rke2-server.service.env
@@ -61,16 +60,9 @@
             state: absent
           loop:
             - /var/lib/rancher/rke2/agent/containerd/
-            - /var/lib/rancher/rke2/agent/containerd/db/meta.db
             - /run/containerd
             - /run/k3s/containerd
           failed_when: false
-
-    - name: Run RKE2 uninstall script if exists
-      ansible.builtin.command:
-        cmd: /usr/local/bin/rke2-uninstall.sh
-        removes: /usr/local/bin/rke2-uninstall.sh
-      failed_when: false
 
     - name: Kill remaining RKE2-related processes
       ansible.builtin.shell: |
@@ -86,11 +78,7 @@
       changed_when: false
       failed_when: false
 
-    - name: Pause to allow processes to terminate
-      ansible.builtin.wait_for:
-        timeout: 10
-
-    - name: Remove RKE2 configuration and data directories
+    - name: Remove remaining RKE2 paths
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -98,7 +86,6 @@
         - /etc/rancher/rke2
         - /var/lib/rancher/rke2
         - /var/lib/kubelet
-        - /var/lib/kubelet/pods
         - /var/lib/cni
         - /var/log/pods
         - /var/log/containers
@@ -110,11 +97,8 @@
         - /run/k3s
         - /run/flannel
         - /etc/cni
-        - /var/run/flannel
-        - /var/run/k3s
         - /usr/local/bin/ctr
         - /usr/local/bin/crictl
-        - /usr/local/bin/containerd*
 
     - name: Clean up network interfaces
       ansible.builtin.shell: |
@@ -140,53 +124,17 @@
       changed_when: false
       failed_when: false
 
-    - name: Verify directory removal
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - /etc/rancher/rke2
-        - /var/lib/rancher/rke2
-        - /var/lib/kubelet
-        - /usr/local/bin/rke2
-        - /usr/local/bin/kubectl
-        - /home/ubuntu/.kube
-      register: dir_check
-      failed_when: false
-
-    - name: Log directories that could not be removed
-      ansible.builtin.debug:
-        msg: "Could not remove directory: {{ item.item }}"
-      loop: "{{ dir_check.results }}"
-      when: item.stat.exists
-
     - name: Clean up RKE2 journal logs
       ansible.builtin.shell: |
-        # Rotate the journal
         systemctl kill --kill-who=main --signal=SIGUSR2 systemd-journald
-
-        # Clear logs specifically for rke2-server
         journalctl --rotate --vacuum-time=1s --unit=rke2-server
-
-        # Force clear the journal files
         rm -f /var/log/journal/*/*.journal
-
-        # Restart journald
         systemctl restart systemd-journald
-
-        # Verify the logs are cleared (optional)
-        if [ $(journalctl --unit=rke2-server | wc -l) -gt 0 ]; then
-          echo "Warning: Some logs may remain"
-        fi
       args:
         executable: /bin/bash
       register: journal_cleanup
       failed_when: false
       changed_when: journal_cleanup.rc == 0
-
-    - name: Display journal cleanup results
-      ansible.builtin.debug:
-        msg: "Journal cleanup completed: {{ journal_cleanup.stdout_lines | default('No output') }}"
-      when: journal_cleanup.stdout_lines is defined
 
     - name: Recommend reboot
       ansible.builtin.debug:

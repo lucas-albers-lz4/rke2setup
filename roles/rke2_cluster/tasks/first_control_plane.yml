@@ -3,27 +3,27 @@
 - name: Check if RKE2 is already configured
   ansible.builtin.stat:
     path: "{{ paths.rke2.config }}/config.yaml"
-  register: rke2_config
+  register: rke2_config_stat
 
 - name: Slurp existing config
   ansible.builtin.slurp:
     src: /etc/rancher/rke2/config.yaml
   register: rke2_config_content
-  when: rke2_config.stat.exists
+  when: rke2_config_stat.stat.exists
 
 - name: Parse existing token
   ansible.builtin.set_fact:
     rke2_token: "{{ (rke2_config_content.content | b64decode | from_yaml).token }}"
-  when: rke2_config.stat.exists and rke2_config_content is defined
+  when: rke2_config_stat.stat.exists and rke2_config_content is defined
 
 - name: Generate new token if none exists
-  when: not rke2_config.stat.exists
+  when: not rke2_config_stat.stat.exists
 
   block:
     - name: Generate cluster token
       ansible.builtin.shell: tr -dc A-Za-z0-9 </dev/urandom | head -c 64
       register: token_result
-      when: not rke2_config.stat.exists
+      when: not rke2_config_stat.stat.exists
 
     - name: Set RKE2 token from generation
       ansible.builtin.set_fact:
@@ -57,7 +57,7 @@
     dest: "{{ paths.rke2.config }}/config.yaml"
     mode: "0644"
   vars:
-    tls_san: "{{ rke2_config['tls-san'] }}"
+    tls_san: "{{ rke2_config.tls_san | default([]) }}"
     token: "{{ rke2_config.token }}"
   become: true
 
@@ -87,6 +87,7 @@
     owner: root
     group: root
   become: true
+  when: rke2_cni | default('cilium') == 'cilium'
 
 - name: Configure Cilium HelmChartConfig (required if we disable kube-proxy)
   ansible.builtin.copy:
@@ -108,63 +109,7 @@
     owner: root
     group: root
   become: true
-
-# First, include the airgap variables
-- name: Include airgap variables
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/vars/airgap.yml"
-
-- name: Set version directory path
-  ansible.builtin.set_fact:
-    version_dir: "{{ airgap.paths.downloads }}/{{ rke2_version }}"
-
-- name: Include airgap verification
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/verify_airgap.yml"
-  when: airgap_install | default(false) | bool
-
-- name: Include airgap image tasks
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/airgap_images.yml"
-  when: airgap_install | default(false) | bool
-
-- name: Map architecture to RKE2 format
-  ansible.builtin.set_fact:
-    rke2_arch: >-
-      {{
-        'amd64' if ansible_architecture == 'x86_64'
-        else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
-        else ansible_architecture
-      }}
-
-- name: Ensure airgap images directory exists
-  ansible.builtin.file:
-    path: "{{ airgap.paths.images_dir }}"
-    state: directory
-    mode: "0755"
-    owner: root
-    group: root
-  become: true
-
-- name: Copy airgap images
-  ansible.builtin.copy:
-    src: "{{ version_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    dest: "{{ airgap.paths.images_dir }}/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    mode: "0644"
-    owner: root
-    group: root
-  become: true
-
-- name: Set file permissions
-  ansible.builtin.file:
-    path: "/var/lib/rancher/rke2/agent/images/rke2-images.linux-{{ rke2_arch }}.tar.zst"
-    mode: '0644'
-    owner: root
-    group: root
-  become: true
-  when: airgap_install | default(false) | bool
-
-- name: Include airgap setup
-  ansible.builtin.include_tasks: airgap/main.yml
-  when: airgap_install | default(false) | bool
+  when: rke2_cni | default('cilium') == 'cilium'
 
 # Now start the service
 - name: Start RKE2 server service
@@ -178,13 +123,11 @@
   retries: "{{ retry_standard }}"
   delay: "{{ retry_delay }}"
 
-- name: Wait for RKE2 service to be fully started
+- name: Wait for RKE2 supervisor port to be ready
   ansible.builtin.wait_for:
-    timeout: 181
-  register: wait_result
-  retries: 12 
-  delay: 15
-  until: wait_result is success
+    host: 127.0.0.1
+    port: 9345
+    timeout: "{{ timeout_startup }}"
 
 - name: Wait for RKE2 binaries to be installed
   ansible.builtin.wait_for:
@@ -235,11 +178,12 @@
   when: kubectl_binary.stat is defined
 
 - name: Debug token generation process
+  when: debug_mode | default(false) | bool
   block:
     - name: Show existing configuration status
       ansible.builtin.debug:
         msg:
-          - "RKE2 config exists: {{ rke2_config.stat.exists }}"
+          - "RKE2 config exists: {{ rke2_config_stat.stat.exists }}"
           - "Inventory hostname: {{ inventory_hostname }}"
           - "First control plane node: {{ groups['control_plane_nodes'][0] }}"
 

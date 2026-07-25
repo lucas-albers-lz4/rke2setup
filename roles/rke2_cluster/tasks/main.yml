@@ -1,7 +1,16 @@
 ---
+- name: Load kubectl configuration
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/kubectl.yml"
+  tags: always
+
 - name: Setup user environment
   ansible.builtin.include_tasks: setup_user.yml
   tags: [user, config]
+
+- name: Include airgap setup
+  ansible.builtin.include_tasks: airgap/main.yml
+  when: airgap_install | default(false) | bool
 
 - name: Setup first control plane node
   ansible.builtin.include_tasks: first_control_plane.yml
@@ -17,7 +26,13 @@
 
 - name: Setup additional control plane nodes
   ansible.builtin.include_tasks: additional_control_planes.yml
-  when: inventory_hostname != groups['control_plane_nodes'][0]
+  when:
+    - inventory_hostname != groups['control_plane_nodes'][0]
+    - inventory_hostname in groups['control_plane_nodes']
+
+- name: Setup worker nodes
+  ansible.builtin.include_tasks: workers.yml
+  when: inventory_hostname in groups['worker_nodes']
 
 - name: Configure cluster access
   ansible.builtin.include_tasks: configure_access.yml
@@ -38,14 +53,3 @@
   ansible.builtin.include_tasks: validate_control_plane.yml
   when: inventory_hostname == groups['control_plane_nodes'][0]
   tags: [validate]
-
-- name: Verify first control plane
-  ansible.builtin.include_tasks: verify_first_control_plane.yml
-  when: inventory_hostname == groups['control_plane_nodes'][0]
-  tags:
-    - verify_control_plane
-    - control_plane
-
-- name: Include airgap setup
-  ansible.builtin.include_tasks: airgap/main.yml
-  when: airgap_install | default(false) | bool
