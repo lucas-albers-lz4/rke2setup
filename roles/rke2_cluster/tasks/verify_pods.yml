@@ -85,7 +85,10 @@
           fi
         done
 
-        MISSING_COUNT=${#missing_pods[@]}
+        MISSING_COUNT=0
+        for _mp in "${missing_pods[@]+"${missing_pods[@]}"}"; do
+          MISSING_COUNT=$((MISSING_COUNT + 1))
+        done
         if [ "$MISSING_COUNT" -ne 0 ]; then
           echo "Waiting for pods: ${missing_pods[*]}"
           exit 1
