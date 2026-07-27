@@ -65,14 +65,17 @@
 
     - name: Verify required components for node type
       ansible.builtin.shell: |
-        required_pods=({% for pod in required_pods %} "{{ pod }}" {% endfor %})
+        set -euo pipefail
         missing_pods=()
 
         echo "Starting verification of required pods..."
+        # REQUIRED_PODS is space-separated from Ansible (avoids Jinja inside the script).
+        # shellcheck disable=SC2206
+        required_pods=(${REQUIRED_PODS})
         for pod in "${required_pods[@]}"; do
           echo "Checking for $pod..."
-          if ! {{ paths.rke2.bin }}/kubectl get pods -n kube-system --no-headers \
-              --field-selector spec.nodeName={{ inventory_hostname | lower }},status.phase=Running | grep -q "$pod"; then
+          if ! "{{ RKE2_BIN }}/kubectl" get pods -n kube-system --no-headers \
+              --field-selector "spec.nodeName=${NODE_NAME},status.phase=Running" | grep -q "$pod"; then
             missing_pods+=("$pod")
             echo "MISSING: $pod"
           else
@@ -86,12 +89,19 @@
           exit 1
         fi
 
-        echo "All required pods are running for node type: {{ 'control plane' if inventory_hostname in groups['control_plane_nodes'] else 'worker' }}"
+        echo "All required pods are running for node type: ${NODE_KIND}"
+      environment:
+        KUBECONFIG: "{{ verification_params.kubeconfig }}"
+        REQUIRED_PODS: "{{ required_pods | join(' ') }}"
+        RKE2_BIN: "{{ paths.rke2.bin }}"
+        NODE_NAME: "{{ inventory_hostname | lower }}"
+        NODE_KIND: "{{ 'control plane' if inventory_hostname in groups['control_plane_nodes'] else 'worker' }}"
       register: pod_verification
       until: pod_verification.rc == 0
       retries: 30
       delay: 10
       changed_when: false
+      delegate_to: "{{ verification_params.delegation_target }}"
 
   rescue:
     - name: Include pod diagnostics collection
