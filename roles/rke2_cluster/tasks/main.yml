@@ -44,6 +44,10 @@
   when: inventory_hostname == groups['control_plane_nodes'][0]
   tags: [verify]
 
+- name: Validate pods on each node
+  ansible.builtin.include_tasks: validation.yml
+  tags: [verify, validate]
+
 - name: Configure user access
   ansible.builtin.include_tasks: configure_user_access.yml
   when: inventory_hostname in groups['control_plane_nodes']

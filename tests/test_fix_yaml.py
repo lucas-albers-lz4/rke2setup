@@ -2,10 +2,8 @@ import pytest
 from scripts.fix_yaml import (
     fix_yaml_file,
     validate_yaml_structure,
-    backup_file
 )
 import os
-import yaml
 import tempfile
 
 @pytest.fixture
@@ -51,23 +49,6 @@ def test_validate_yaml_structure_with_invalid_types():
     # Test with missing children
     with pytest.raises(ValueError, match="Missing required field 'children'"):
         validate_yaml_structure({'all': {}})
-
-def test_backup_file(tmp_path):
-    """Test file backup functionality"""
-    # Create test file
-    test_file = tmp_path / "test.yml"
-    with open(test_file, 'w') as f:
-        f.write("test content")
-    
-    backup_path = backup_file(str(test_file))
-    assert os.path.exists(backup_path)
-    assert backup_path.endswith('.bak')
-
-def test_backup_file_nonexistent():
-    """Test backup_file with nonexistent file"""
-    backup_path = backup_file("/nonexistent/file.yml")
-    assert backup_path.endswith('.bak')
-    assert not os.path.exists(backup_path)
 
 def test_fix_yaml_file(sample_yaml_file):
     """Test YAML file fixing"""

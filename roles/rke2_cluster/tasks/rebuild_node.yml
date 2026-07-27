@@ -452,6 +452,8 @@
     mode: "0644"
     owner: root
     group: root
-  when: rke2_install_result.changed | default(false)
+  when:
+    - airgap_install | default(false) | bool
+    - rke2_install_result.changed | default(false)
 
 

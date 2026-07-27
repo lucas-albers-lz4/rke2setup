@@ -5,9 +5,10 @@
   block:
     - name: Check node status
       ansible.builtin.command:
-        cmd: "{{ commands.kubectl }} get nodes"
+        cmd: "{{ paths.rke2.bin }}/kubectl get nodes"
       register: node_status
       changed_when: false
+      become: true
 
     - name: Verify pod status
       ansible.builtin.include_tasks: verify_pods.yml

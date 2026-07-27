@@ -11,24 +11,82 @@
   register: rke2_config_content
   when: rke2_config_stat.stat.exists
 
-- name: Parse existing token
+- name: Parse existing token from config
   ansible.builtin.set_fact:
     rke2_token: "{{ (rke2_config_content.content | b64decode | from_yaml).token }}"
   when: rke2_config_stat.stat.exists and rke2_config_content is defined
 
-- name: Generate new token if none exists
-  when: not rke2_config_stat.stat.exists
+- name: Create RKE2 config directory
+  ansible.builtin.file:
+    path: "{{ paths.rke2.config }}"
+    state: directory
+    mode: "0755"
+  become: true
 
+- name: Check for persisted cluster token sidecar
+  ansible.builtin.stat:
+    path: "{{ paths.rke2.config }}/.cluster-token"
+  register: cluster_token_stat
+  when: rke2_token is not defined or rke2_token | length == 0
+
+- name: Read persisted cluster token sidecar
+  ansible.builtin.slurp:
+    src: "{{ paths.rke2.config }}/.cluster-token"
+  register: cluster_token_file
+  when:
+    - cluster_token_stat is defined
+    - cluster_token_stat.stat.exists | default(false)
+  become: true
+
+- name: Set token from persisted sidecar
+  ansible.builtin.set_fact:
+    rke2_token: "{{ cluster_token_file.content | b64decode | trim }}"
+  when:
+    - cluster_token_file is defined
+    - cluster_token_file.content is defined
+
+- name: Check for existing RKE2 node-token
+  ansible.builtin.stat:
+    path: "{{ paths.rke2.data }}/server/node-token"
+  register: rke2_node_token_stat
+  when: rke2_token is not defined or rke2_token | length == 0
+
+- name: Read existing RKE2 node-token
+  ansible.builtin.slurp:
+    src: "{{ paths.rke2.data }}/server/node-token"
+  register: rke2_node_token_file
+  when:
+    - rke2_node_token_stat is defined
+    - rke2_node_token_stat.stat.exists | default(false)
+  become: true
+
+- name: Set token from RKE2 node-token
+  ansible.builtin.set_fact:
+    rke2_token: "{{ rke2_node_token_file.content | b64decode | trim }}"
+  when:
+    - rke2_node_token_file is defined
+    - rke2_node_token_file.content is defined
+
+- name: Generate new token if none exists
+  when: rke2_token is not defined or rke2_token | length == 0
   block:
     - name: Generate cluster token
       ansible.builtin.shell: tr -dc A-Za-z0-9 </dev/urandom | head -c 64
       register: token_result
-      when: not rke2_config_stat.stat.exists
+      changed_when: false
 
     - name: Set RKE2 token from generation
       ansible.builtin.set_fact:
         rke2_token: "{{ token_result.stdout }}"
-      when: token_result is defined and token_result.stdout is defined
+
+- name: Persist cluster token sidecar
+  ansible.builtin.copy:
+    content: "{{ rke2_token }}"
+    dest: "{{ paths.rke2.config }}/.cluster-token"
+    mode: "0600"
+  become: true
+  when: rke2_token is defined and rke2_token | length > 0
+
 - name: Verify token is set
   ansible.builtin.assert:
     that:
@@ -44,13 +102,6 @@
   with_items: "{{ groups['all'] }}"
   when: rke2_token is defined
 
-- name: Create RKE2 config directory
-  ansible.builtin.file:
-    path: "{{ paths.rke2.config }}"
-    state: directory
-    mode: "0755"
-  become: true
-
 - name: Configure first control plane node
   ansible.builtin.template:
     src: config.yaml.j2
@@ -58,7 +109,6 @@
     mode: "0644"
   vars:
     tls_san: "{{ rke2_config.tls_san | default([]) }}"
-    token: "{{ rke2_config.token }}"
   become: true
 
 - name: Download RKE2 installation script
