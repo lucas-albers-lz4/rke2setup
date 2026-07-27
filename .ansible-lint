@@ -7,7 +7,7 @@ exclude_paths:
   - "venv/**/*"
   - ".env/"
   - "env/"
-  
+
   # System and cache (absolute paths)
   - ".git/"
   - ".tox/"
@@ -15,7 +15,7 @@ exclude_paths:
   - ".pytest_cache/"
   - "__pycache__/"
   - "**/__pycache__/"
-  
+
   # CI/CD (absolute paths)
   - ".github/"
   - ".gitlab/"
@@ -41,6 +41,3 @@ strict: false
 
 # Debug settings
 verbosity: 2
-parseable: true
-progressive: true
-
