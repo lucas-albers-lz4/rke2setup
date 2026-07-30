@@ -1,4 +1,4 @@
-ansible>=14.2.0
+ansible==14.2.0
 PyYAML>=6.0
 ansible-lint>=24.2.0
 pytest

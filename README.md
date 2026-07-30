@@ -54,7 +54,7 @@ Worker Nodes (each):
 ## Prerequisites
 
 - Ubuntu 20.04 or 22.04
-- Ansible 14.x
+- Ansible 14.2.0
 - Python 3.10+
 - SSH key-based authentication configured (Our playbook sets this)
 - Sudo access on all nodes (Our playbook sets this.)
