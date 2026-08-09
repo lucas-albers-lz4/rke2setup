@@ -2,7 +2,7 @@
 import os
 import sys
 import argparse
-from jinja2 import Environment, FileSystemLoader, exceptions
+from jinja2 import Environment, FileSystemLoader, exceptions, select_autoescape
 
 def check_jinja_file(file_path):
     """Check a single file for Jinja2 syntax errors."""
@@ -10,9 +10,11 @@ def check_jinja_file(file_path):
         with open(file_path, 'r') as f:
             template_content = f.read()
         
-        # Create a Jinja2 environment (parse-only; never renders HTML).
-        # codeql[py/jinja2/autoescape-false]
-        env = Environment(loader=FileSystemLoader(os.path.dirname(file_path)))
+        # Create a Jinja2 environment (parse-only via env.parse — never renders).
+        env = Environment(
+            loader=FileSystemLoader(os.path.dirname(file_path)),
+            autoescape=select_autoescape(enabled_extensions=("html", "xml")),
+        )
         
         # Try to parse the template
         env.parse(template_content)
