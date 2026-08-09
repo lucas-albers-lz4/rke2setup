@@ -11,6 +11,8 @@ def check_jinja_file(file_path):
             template_content = f.read()
         
         # Create a Jinja2 environment
+        # codeql[py/jinja2/autoescape-false] — parse-only check (env.parse,
+        # never renders): no output is produced, so autoescape is irrelevant.
         env = Environment(loader=FileSystemLoader(os.path.dirname(file_path)))
         
         # Try to parse the template
