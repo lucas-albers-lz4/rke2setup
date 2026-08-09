@@ -198,9 +198,8 @@ def render_template(test_vars):
         '../roles/rke2_cluster/templates/config.yaml.j2'
     )
     with open(template_path) as f:
-        # codeql[py/jinja2/autoescape-false] — output is an Ansible/RKE2
-        # config YAML written to disk, not HTML; autoescape would corrupt
-        # values like {{ k3s_server }}.
+        # YAML config to disk, not HTML — autoescape would corrupt values.
+        # codeql[py/jinja2/autoescape-false]
         template = Environment(loader=FileSystemLoader('/')).from_string(f.read())
     return template.render(**test_vars)
 

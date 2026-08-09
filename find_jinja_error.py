@@ -10,9 +10,8 @@ def check_jinja_file(file_path):
         with open(file_path, 'r') as f:
             template_content = f.read()
         
-        # Create a Jinja2 environment
-        # codeql[py/jinja2/autoescape-false] — parse-only check (env.parse,
-        # never renders): no output is produced, so autoescape is irrelevant.
+        # Create a Jinja2 environment (parse-only; never renders HTML).
+        # codeql[py/jinja2/autoescape-false]
         env = Environment(loader=FileSystemLoader(os.path.dirname(file_path)))
         
         # Try to parse the template
