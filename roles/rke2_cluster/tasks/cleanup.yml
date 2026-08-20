@@ -82,13 +82,9 @@
     - /var/lib/kubelet
     - /etc/kubernetes
     - /run/k3s
-    - /run/k3s/containerd
-    - /run/containerd
     - /run/flannel
     - /etc/cni
     - /var/lib/cni
-    - /var/log/pods
-    - /var/log/containers
     - /opt/rke2
     - /opt/cni
     - /home/ubuntu/.kube
@@ -132,6 +128,8 @@
         - "{{ paths.rke2.agent }}/containerd/"
         - /run/containerd
         - /run/k3s/containerd
+        - /var/log/pods
+        - /var/log/containers
       failed_when: false
 
     - name: Kill remaining RKE2-related processes
