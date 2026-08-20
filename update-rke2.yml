@@ -46,14 +46,26 @@
     - name: Wait for kube-system pods on node
       ansible.builtin.shell: |
         set -euo pipefail
-        non_running=$({{ kubectl.command }} get pods -n kube-system \
-          --field-selector "spec.nodeName={{ inventory_hostname | lower }},status.phase!=Running" \
-          --no-headers -o custom-columns=NAME:.metadata.name,STATUS:.status.phase)
-        if [ -n "$non_running" ]; then
-          echo "$non_running"
+        out=$({{ kubectl.command }} get pods -n kube-system \
+          --field-selector "spec.nodeName={{ inventory_hostname | lower }}" \
+          -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.containerStatuses[0].ready}{"\n"}{end}')
+        if [ -z "${out}" ]; then
+          echo "no kube-system pods found on node"
           exit 1
         fi
-        exit 0
+        unhealthy=0
+        while IFS=$'\t' read -r name phase ready; do
+          [ -z "${name}" ] && continue
+          if [ "${phase}" = "Succeeded" ]; then
+            continue
+          fi
+          if [ "${phase}" = "Running" ] && [ "${ready}" = "true" ]; then
+            continue
+          fi
+          echo "${name} phase=${phase} ready=${ready}"
+          unhealthy=1
+        done <<< "${out}"
+        exit "${unhealthy}"
       args:
         executable: /bin/bash
       register: pod_status
@@ -78,6 +90,6 @@
         tasks_from: uncordon_node
       vars:
         kubectl:
-          command: "{{ kubectl.command }}"
+          command: "/usr/local/bin/kubectl --kubeconfig={{ paths.rke2.kubeconfig }}"
           config: "{{ paths.rke2.kubeconfig }}"
       when: inventory_hostname in groups['control_plane_nodes'] or inventory_hostname in groups['worker_nodes']
