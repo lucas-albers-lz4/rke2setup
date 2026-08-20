@@ -285,22 +285,6 @@
     node_token: "{{ rke2_token }}"
   become: true
 
-- name: Check network connectivity to RKE2 documentation
-  ansible.builtin.uri:
-    url: https://docs.rke2.io/
-    method: GET
-    timeout: 30
-  register: rke2_docs_check
-  failed_when: false
-  become: true
-
-- name: Warn if RKE2 documentation site is unreachable
-  ansible.builtin.debug:
-    msg: >-
-      Unable to reach https://docs.rke2.io/ (status={{ rke2_docs_check.status | default('n/a') }}).
-      Continuing rebuild; this check is informational only.
-  when: rke2_docs_check.status | default(0) != 200
-
 - name: Include airgap setup
   ansible.builtin.include_tasks: airgap/main.yml
   when: airgap_install | default(false) | bool
@@ -347,21 +331,57 @@
 
 - name: Wait for node to be ready
   block:
-    - name: Check kube-system pods readiness on node
+    - name: Wait for node Ready=True
       ansible.builtin.shell: |
-        {{ kube_cmd }} get pods -n kube-system --field-selector spec.nodeName={{ inventory_hostname | lower }} -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | grep -v "Running" || true
-      register: pod_status
-      until: pod_status.stdout == ""
+        set -o pipefail
+        {{ kubectl.command }} get nodes {{ inventory_hostname | lower }} \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      args:
+        executable: /bin/bash
+      register: node_ready
+      until: node_ready.rc == 0 and node_ready.stdout == "True"
       retries: "{{ 60 if rebuilding_first_node else 30 }}"
       delay: "{{ 20 if rebuilding_first_node else 10 }}"
       delegate_to: "{{ delegation_target }}"
+      become: true
       changed_when: false
-      failed_when: false
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
 
-    - name: Display error details on failure
-      ansible.builtin.fail:
-        msg: "Not all kube-system pods are running on node {{ inventory_hostname }}"
-      when: pod_status.stdout != ""
+    - name: Wait for kube-system pods on node
+      ansible.builtin.shell: |
+        set -euo pipefail
+        out=$({{ kubectl.command }} get pods -n kube-system \
+          --field-selector "spec.nodeName={{ inventory_hostname | lower }}" \
+          -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.containerStatuses[0].ready}{"\n"}{end}')
+        if [ -z "${out}" ]; then
+          echo "no kube-system pods found on node"
+          exit 1
+        fi
+        unhealthy=0
+        while IFS=$'\t' read -r name phase ready; do
+          [ -z "${name}" ] && continue
+          if [ "${phase}" = "Succeeded" ]; then
+            continue
+          fi
+          if [ "${phase}" = "Running" ] && [ "${ready}" = "true" ]; then
+            continue
+          fi
+          echo "${name} phase=${phase} ready=${ready}"
+          unhealthy=1
+        done <<< "${out}"
+        exit "${unhealthy}"
+      args:
+        executable: /bin/bash
+      register: pod_status
+      until: pod_status.rc == 0
+      retries: "{{ 60 if rebuilding_first_node else 30 }}"
+      delay: "{{ 20 if rebuilding_first_node else 10 }}"
+      delegate_to: "{{ delegation_target }}"
+      become: true
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ paths.rke2.kubeconfig }}"
 
     - name: Display node status
       ansible.builtin.debug:
@@ -444,6 +464,15 @@
           Time: {{ ansible_date_time.iso8601 }}
           Details:
           {{ node_diagnostics.stdout }}
+
+- name: Uncordon node after rebuild
+  ansible.builtin.include_role:
+    name: rke2_cluster
+    tasks_from: uncordon_node
+  vars:
+    kubectl:
+      command: "/usr/local/bin/kubectl --kubeconfig={{ paths.rke2.kubeconfig }}"
+      config: "{{ paths.rke2.kubeconfig }}"
 
 - name: Copy airgap images after installation
   ansible.builtin.copy:
