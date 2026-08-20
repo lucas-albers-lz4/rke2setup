@@ -181,4 +181,3 @@
         - /opt/rke2
         - /opt/cni
         - /home/ubuntu/.kube
-      failed_when: false
