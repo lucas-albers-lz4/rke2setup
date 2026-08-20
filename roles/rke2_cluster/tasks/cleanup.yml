@@ -159,25 +159,24 @@
       changed_when: false
       failed_when: false
 
-  always:
-    - name: Remove remaining RKE2 paths
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ paths.rke2.data }}"
-        - "{{ paths.rke2.config }}"
-        - "{{ paths.system.bin }}/rke2"
-        - "{{ paths.system.bin }}/kubectl"
-        - "{{ paths.system.bin }}/ctr"
-        - "{{ paths.system.bin }}/crictl"
-        - "{{ paths.user.kube }}"
-        - /var/lib/kubelet
-        - /etc/kubernetes
-        - /run/k3s
-        - /run/flannel
-        - /etc/cni
-        - /var/lib/cni
-        - /opt/rke2
-        - /opt/cni
-        - /home/ubuntu/.kube
+- name: Remove remaining RKE2 paths
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ paths.rke2.data }}"
+    - "{{ paths.rke2.config }}"
+    - "{{ paths.system.bin }}/rke2"
+    - "{{ paths.system.bin }}/kubectl"
+    - "{{ paths.system.bin }}/ctr"
+    - "{{ paths.system.bin }}/crictl"
+    - "{{ paths.user.kube }}"
+    - /var/lib/kubelet
+    - /etc/kubernetes
+    - /run/k3s
+    - /run/flannel
+    - /etc/cni
+    - /var/lib/cni
+    - /opt/rke2
+    - /opt/cni
+    - /home/ubuntu/.kube
