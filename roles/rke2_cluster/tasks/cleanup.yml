@@ -71,27 +71,25 @@
 - name: Extra-destructive leftover cleanup
   when: rke2_cleanup_confirmed | default(false) | bool
   block:
-    - name: Require playbook confirmation for extra-destructive cleanup
-      ansible.builtin.assert:
-        that:
-          - rke2_cleanup_confirmed | bool
-        fail_msg: >-
-          Extra-destructive leftover cleanup (containerd kill/umount, remaining
-          process kill, network iface delete, iptables flush, journal vacuum)
-          requires confirmation from cleanup.yml. Complete the playbook pause
-          so rke2_cleanup_confirmed is set; the role will not run these steps
-          without that confirmation.
-
-    - name: Kill any remaining containerd processes
+    - name: Kill leftover containerd and k3s processes
       ansible.builtin.shell: |
-        pkill -9 containerd || true
-        pkill -9 -f "k3s" || true
+        set +e
+        self=$$
+        parent=$PPID
+        for pid in $(pgrep -f 'containerd|k3s' || true); do
+          if [ "$pid" != "$self" ] && [ "$pid" != "$parent" ]; then
+            kill -9 "$pid" || true
+          fi
+        done
         for mp in $(mount | grep containerd | awk '{print $3}'); do
-          umount -f $mp || true
+          umount -f "$mp" || true
         done
         for mp in $(mount | grep "shm" | grep "k3s\|rke2" | awk '{print $3}'); do
-          umount -f $mp || true
+          umount -f "$mp" || true
         done
+        exit 0
+      args:
+        executable: /bin/bash
       changed_when: false
       failed_when: false
 
@@ -113,13 +111,18 @@
 
     - name: Kill remaining RKE2-related processes
       ansible.builtin.shell: |
-        for pid in $(ps -ef | grep -E "rke2|containerd" | grep -v grep | awk '{print $2}'); do
-          kill -9 $pid || true
+        set +e
+        self=$$
+        parent=$PPID
+        for pid in $(pgrep -f 'rke2|containerd|kubelet' || true); do
+          if [ "$pid" != "$self" ] && [ "$pid" != "$parent" ]; then
+            kill -9 "$pid" || true
+          fi
         done
-        pkill -9 -f "rke2" || true
-        pkill -9 -f "containerd" || true
-        pkill -9 -f "kubelet" || true
-        pkill -f "journalctl.*rke2" || true
+        pkill -9 -x containerd || true
+        pkill -9 -x containerd-shim-runc-v2 || true
+        pkill -9 -x kubelet || true
+        exit 0
       args:
         executable: /bin/bash
       changed_when: false
@@ -135,6 +138,13 @@
       changed_when: false
       failed_when: false
 
+    - name: Warn that iptables flush opens the host
+      ansible.builtin.debug:
+        msg: >-
+          Flushing filter/nat/mangle and setting INPUT/FORWARD/OUTPUT to ACCEPT.
+          This removes host firewall rules as well as RKE2/CNI rules. Restore the
+          host firewall or reboot before returning this node to service.
+
     - name: Flush iptables
       ansible.builtin.shell: |
         iptables -F
@@ -149,37 +159,25 @@
       changed_when: false
       failed_when: false
 
-    - name: Clean up RKE2 journal logs
-      ansible.builtin.shell: |
-        systemctl kill --kill-who=main --signal=SIGUSR2 systemd-journald
-        journalctl --rotate --vacuum-time=1s --unit=rke2-server
-        rm -f /var/log/journal/*/*.journal
-        systemctl restart systemd-journald
-      args:
-        executable: /bin/bash
-      register: journal_cleanup
-      failed_when: false
-      changed_when: journal_cleanup.rc == 0
-
-- name: Remove remaining RKE2 paths
-  when: rke2_cleanup_confirmed | default(false) | bool
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "{{ paths.rke2.data }}"
-    - "{{ paths.rke2.config }}"
-    - "{{ paths.system.bin }}/rke2"
-    - "{{ paths.system.bin }}/kubectl"
-    - "{{ paths.system.bin }}/ctr"
-    - "{{ paths.system.bin }}/crictl"
-    - "{{ paths.user.kube }}"
-    - /var/lib/kubelet
-    - /etc/kubernetes
-    - /run/k3s
-    - /run/flannel
-    - /etc/cni
-    - /var/lib/cni
-    - /opt/rke2
-    - /opt/cni
-    - /home/ubuntu/.kube
+  always:
+    - name: Remove remaining RKE2 paths
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ paths.rke2.data }}"
+        - "{{ paths.rke2.config }}"
+        - "{{ paths.system.bin }}/rke2"
+        - "{{ paths.system.bin }}/kubectl"
+        - "{{ paths.system.bin }}/ctr"
+        - "{{ paths.system.bin }}/crictl"
+        - "{{ paths.user.kube }}"
+        - /var/lib/kubelet
+        - /etc/kubernetes
+        - /run/k3s
+        - /run/flannel
+        - /etc/cni
+        - /var/lib/cni
+        - /opt/rke2
+        - /opt/cni
+        - /home/ubuntu/.kube
