@@ -66,6 +66,7 @@
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
+  ignore_errors: true
 
 - name: Extra-destructive leftover cleanup
   when: rke2_cleanup_confirmed | default(false) | bool
@@ -160,24 +161,25 @@
       failed_when: false
       changed_when: journal_cleanup.rc == 0
 
-    - name: Remove remaining RKE2 paths
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ paths.rke2.data }}"
-        - "{{ paths.rke2.config }}"
-        - "{{ paths.system.bin }}/rke2"
-        - "{{ paths.system.bin }}/kubectl"
-        - "{{ paths.system.bin }}/ctr"
-        - "{{ paths.system.bin }}/crictl"
-        - "{{ paths.user.kube }}"
-        - /var/lib/kubelet
-        - /etc/kubernetes
-        - /run/k3s
-        - /run/flannel
-        - /etc/cni
-        - /var/lib/cni
-        - /opt/rke2
-        - /opt/cni
-        - /home/ubuntu/.kube
+- name: Remove remaining RKE2 paths
+  when: rke2_cleanup_confirmed | default(false) | bool
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ paths.rke2.data }}"
+    - "{{ paths.rke2.config }}"
+    - "{{ paths.system.bin }}/rke2"
+    - "{{ paths.system.bin }}/kubectl"
+    - "{{ paths.system.bin }}/ctr"
+    - "{{ paths.system.bin }}/crictl"
+    - "{{ paths.user.kube }}"
+    - /var/lib/kubelet
+    - /etc/kubernetes
+    - /run/k3s
+    - /run/flannel
+    - /etc/cni
+    - /var/lib/cni
+    - /opt/rke2
+    - /opt/cni
+    - /home/ubuntu/.kube
