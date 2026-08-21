@@ -179,4 +179,3 @@
     - /var/lib/cni
     - /opt/rke2
     - /opt/cni
-    - /home/ubuntu/.kube
