@@ -7,13 +7,15 @@ fragmented re-reviews, no findings landing after the gate was declared green.
 ## How the repo is configured
 
 CodeRabbit uses its default auto-review config (no `.coderabbit.yaml`):
-**draft PRs are skipped by automatic reviews** — a review starts only when the
-PR is marked **Ready for review** (manual `@coderabbitai review` still works on
-drafts). Every eligible push to a reviewed PR starts a new incremental round
-covering the commits since the last review (skipped while auto-review is paused
-or when the plan/rate limit is hit).
+**draft PRs are skipped by automatic reviews** — marking the PR **Ready for
+review** makes it *eligible* for automatic review, not guaranteed (a run can be
+blocked while auto-review is paused or the shared allowance is exhausted).
+Manual `@coderabbitai review` can still trigger on drafts, subject to the same
+plan/rate-limit allowance. Every eligible push to a reviewed PR starts a new
+incremental round covering the commits since the last review (skipped while
+auto-review is paused or when the plan/rate limit is hit).
 
-Manual commands always work as an override:
+Manual commands can be used as manual triggers, subject to availability:
 
 - `@coderabbitai review` — incremental review on demand
 - `@coderabbitai full review` — full re-review from scratch
@@ -36,6 +38,10 @@ Manual commands always work as an override:
    — all inline comments of that round land atomically with it, and the
    walkthrough comment's `updated_at` catches up moments later. Do not accept
    a human review or an older/stale submission as the completion signal.
+   **Rate limit is a terminal state, not a wait state:** if the bot posts a
+   rate-limit comment and the `Review rate limited` check passes, the trigger
+   head was NOT reviewed — mark it unreviewed and retry `@coderabbitai review`
+   when quota is available instead of polling for a `COMMENTED` submission.
 
 3. **Batch all fixes into ONE push, then wait again.** Each eligible push can
    spawn a new incremental round (skipped while auto-review is paused or the
