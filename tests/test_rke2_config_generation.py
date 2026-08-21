@@ -4,7 +4,7 @@ import pytest
 import yaml
 import os
 from scripts.generate_rke2_configs import generate_base_vars, validate_inventory_data
-from jinja2 import Template, Environment
+from jinja2 import Template, Environment, select_autoescape
 from jinja2.loaders import FileSystemLoader
 
 @pytest.fixture
@@ -198,7 +198,14 @@ def render_template(test_vars):
         '../roles/rke2_cluster/templates/config.yaml.j2'
     )
     with open(template_path) as f:
-        template = Environment(loader=FileSystemLoader('/')).from_string(f.read())
+        # YAML config (not HTML): select_autoescape leaves string templates unescaped.
+        template = Environment(
+            loader=FileSystemLoader("/"),
+            autoescape=select_autoescape(
+                enabled_extensions=("html", "xml"),
+                default_for_string=False,
+            ),
+        ).from_string(f.read())
     return template.render(**test_vars)
 
 def test_rke2_config_defaults():
