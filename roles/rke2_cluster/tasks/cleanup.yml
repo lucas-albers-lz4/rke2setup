@@ -81,32 +81,10 @@
             kill -9 "$pid" || true
           fi
         done
-        for mp in $(mount | grep containerd | awk '{print $3}'); do
-          umount -f "$mp" || true
-        done
-        for mp in $(mount | grep "shm" | grep "k3s\|rke2" | awk '{print $3}'); do
-          umount -f "$mp" || true
-        done
         exit 0
       args:
         executable: /bin/bash
       changed_when: false
-      failed_when: false
-
-    - name: Wait for processes to terminate
-      ansible.builtin.wait_for:
-        timeout: 5
-
-    - name: Clean containerd directories
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ paths.rke2.agent }}/containerd/"
-        - /run/containerd
-        - /run/k3s/containerd
-        - /var/log/pods
-        - /var/log/containers
       failed_when: false
 
     - name: Kill remaining RKE2-related processes
@@ -128,13 +106,42 @@
       changed_when: false
       failed_when: false
 
+    - name: Wait for processes to terminate
+      ansible.builtin.wait_for:
+        timeout: 5
+
+    - name: Unmount leftover containerd and RKE2 mounts
+      ansible.builtin.shell: |
+        set +e
+        for mp in $(mount | grep containerd | awk '{print $3}'); do
+          umount -f "$mp" || true
+        done
+        for mp in $(mount | grep "shm" | grep "k3s\|rke2" | awk '{print $3}'); do
+          umount -f "$mp" || true
+        done
+        exit 0
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    - name: Clean containerd directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ paths.rke2.agent }}/containerd/"
+        - /run/containerd
+        - /run/k3s/containerd
+        - /var/log/pods
+        - /var/log/containers
+      failed_when: false
+
     - name: Clean up network interfaces
       ansible.builtin.shell: |
         ip link delete cni0 || true
         ip link delete flannel.1 || true
         ip link delete flannel-v6.1 || true
-        rm -rf /var/lib/cni/
-        rm -rf /etc/cni/
       changed_when: false
       failed_when: false
 
@@ -179,4 +186,3 @@
     - /var/lib/cni
     - /opt/rke2
     - /opt/cni
-    - /home/ubuntu/.kube
