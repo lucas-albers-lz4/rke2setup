@@ -19,6 +19,4 @@
     src: "{{ playbook_dir }}/roles/rke2_cluster/templates/config.yaml.j2"
     dest: "{{ paths.rke2.config }}/config.yaml"
     mode: "0644"
-  notify:
-    - restart rke2-server
-    - restart rke2-agent 
+ 
